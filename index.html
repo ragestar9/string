@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>StringTune — A 3D Motion Runtime</title>
-<meta name="description" content="A 3D landing page built entirely with the StringTune runtime from fiddle.digital — scroll motion, cursor physics, spotlight lighting and more." />
+<title>StringTune × Three.js — A 3D Motion Runtime</title>
+<meta name="description" content="A 3D landing page built with the StringTune runtime from fiddle.digital and a real Three.js/WebGL scene — scroll motion, cursor physics, spotlight lighting and more." />
 
 <!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,6 +19,11 @@
 
 <!-- anime.js v4 -->
 <script src="https://cdn.jsdelivr.net/npm/animejs@4/dist/bundles/anime.umd.min.js"></script>
+
+<!-- Three.js r160 — ES module via importmap (the legacy build/three.min.js UMD was removed at r160, so we use the supported module path). -->
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
 
 <style>
   :root{
@@ -334,15 +339,83 @@
   .foot-bot{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--line);
     font-family:'JetBrains Mono';font-size:12px;color:var(--faint);flex-wrap:wrap;gap:12px}
 
+  /* ============ +3D WebGL scene (Three.js) ============ */
+  .webgl-section{position:relative;min-height:520px}
+  .webgl-stage{position:relative;margin-top:50px;border:1px solid var(--line);border-radius:22px;overflow:hidden;
+    min-height:460px;background:radial-gradient(circle at 50% 50%,rgba(55,230,255,.07),transparent 62%),#060608}
+  #webgl-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:1}
+  /* CSS fallback shown only when WebGL is unavailable (body gets .no-webgl) */
+  .webgl-fallback{position:absolute;inset:0;display:none;z-index:2;align-items:center;justify-content:center;flex-direction:column;gap:14px;
+    background:radial-gradient(circle at 50% 50%,rgba(138,107,255,.22),transparent 60%),#060608;color:var(--muted)}
+  body.no-webgl .webgl-fallback{display:flex}
+  body.no-webgl #webgl-canvas{display:none}
+  .webgl-fallback .ico{font-size:46px;color:var(--lime)}
+  .webgl-read{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:3;
+    font-family:'JetBrains Mono';font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.18em;
+    display:flex;gap:18px;flex-wrap:wrap;justify-content:center;padding:0 20px}
+  .webgl-read b{color:var(--lime);font-weight:500}
+  .webgl-stack{position:absolute;right:22px;top:22px;z-index:3;font-family:'JetBrains Mono';font-size:11px;color:var(--faint);
+    border:1px solid var(--line);padding:6px 12px;border-radius:100px;background:rgba(8,8,14,.55)}
+
+  /* ============ +A Masonry ============ */
+  .masonry-grid{margin-top:50px;columns:3;column-gap:18px}
+  .masonry-card{break-inside:avoid;margin-bottom:18px;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+    background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
+    opacity:var(--progress,0);transform:translateY(calc((1 - var(--progress,0)) * 40px));
+    transition:transform .4s cubic-bezier(.16,.84,.18,1)}
+  .masonry-card .ph{aspect-ratio:var(--ratio,4/3);
+    background:linear-gradient(135deg,var(--violet),var(--cyan));position:relative}
+  .masonry-card .ph.b{background:linear-gradient(135deg,var(--lime),#3a8b2a)}
+  .masonry-card .ph.c{background:linear-gradient(135deg,#ff5a8a,var(--violet))}
+  .masonry-card .ph.d{background:linear-gradient(135deg,var(--cyan),#0b3540)}
+  .masonry-card .ph.e{background:radial-gradient(circle at 30% 30%,var(--lime),#06140a)}
+  .masonry-card .ph.f{background:radial-gradient(circle at 70% 40%,var(--violet),#0a0628)}
+  .masonry-card .ph::after{content:"";position:absolute;inset:0;background:
+    linear-gradient(transparent 60%,rgba(0,0,0,.35))}
+  .masonry-card .cap{padding:14px 16px}
+  .masonry-card .cap b{font-family:'Space Grotesk';font-size:16px;display:block}
+  .masonry-card .cap span{font-family:'JetBrains Mono';font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+
+  /* ============ +B Lazy media + autoplay ============ */
+  .lazy-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:22px;margin-top:50px}
+  .lazy-media{position:relative;border:1px solid var(--line);border-radius:20px;overflow:hidden;min-height:300px;background:#060608}
+  .lazy-poster{display:block;width:100%;height:100%;object-fit:cover;min-height:300px;
+    opacity:var(--progress,0);transform:scale(calc(1.08 - var(--progress,0) * .08));
+    transition:opacity .6s ease,transform .6s ease}
+  .lazy-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:var(--progress,0);
+    transition:opacity .6s ease}
+  .lazy-aside{display:flex;flex-direction:column;gap:14px}
+  .lazy-tile{flex:1;border:1px solid var(--line);border-radius:20px;overflow:hidden;position:relative;min-height:140px;
+    background:linear-gradient(160deg,rgba(55,230,255,.08),transparent)}
+  .lazy-tile img{display:block;width:100%;height:100%;object-fit:cover;
+    opacity:var(--progress,0);transform:translateY(calc((1 - var(--progress,0)) * 26px));transition:opacity .6s,transform .6s}
+  .lazy-tile .cap{position:absolute;bottom:14px;left:16px;font-family:'JetBrains Mono';font-size:12px;color:#fff;
+    text-shadow:0 1px 6px rgba(0,0,0,.6)}
+
+  /* ============ reduced motion ============ */
+  @media(prefers-reduced-motion:reduce){
+    .marquee-track,.cursor .bar,.aj-orbit{animation:none!important}
+    .blob{filter:blur(90px);opacity:.35}
+    .hero-title .-s-char,.split-line .-s-char{animation:none!important;opacity:1!important;transform:none!important}
+  }
+  /* a11y — keyboard focus rings on the click-activated demo cards */
+  .aj-svg-card, #ajSpringRow, #ajStgFrame, #ajEaseFrame, #ajTextCard, #ajWaapiCard, #ajSvgCard { outline:none }
+  .aj-svg-card:focus-visible, #ajSpringRow:focus-visible, #ajStgFrame:focus-visible,
+  #ajEaseFrame:focus-visible, #ajTextCard:focus-visible, #ajWaapiCard:focus-visible,
+  #ajSvgCard:focus-visible { box-shadow:0 0 0 2px var(--lime); }
+
   /* ---- responsive ---- */
   @media(max-width:980px){
     .reveal-grid,.spot-grid,.forms-grid,.imp-grid{grid-template-columns:repeat(2,1fr)}
     .imp-grid{grid-template-columns:repeat(2,1fr)}
+    .masonry-grid{columns:2}
+    .lazy-grid{grid-template-columns:1fr}
     .diag{grid-template-columns:1fr}
     .nav-links{display:none}
   }
   @media(max-width:620px){
     .reveal-grid,.spot-grid,.forms-grid,.imp-grid,.cursor-demo,.diag{grid-template-columns:1fr}
+    .masonry-grid{columns:1}
     .glide-row{flex-direction:column}
     .hero-title{font-size:clamp(46px,15vw,90px)}
   }
@@ -512,8 +585,8 @@
 <div class="grid-lines"></div>
 <div class="grain"></div>
 
-<!-- custom cursor portal (StringCursor) -->
-<div class="cursor" string-cursor="default"><span class="core"></span></div>
+<!-- custom cursor portal (StringCursor) — decorative -->
+<div class="cursor" string-cursor="default" aria-hidden="true"><span class="core"></span></div>
 
 <!-- nav -->
 <div class="progress-bar"><i id="navBar"></i></div>
@@ -523,6 +596,8 @@
     <a href="#parallax" data-jump>Motion</a>
     <a href="#cursor" data-jump>Cursor</a>
     <a href="#spotlight" data-jump>3D</a>
+    <a href="#webgl" data-jump>WebGL</a>
+    <a href="#masonry" data-jump>Masonry</a>
     <a href="#forms" data-jump>Forms</a>
     <a href="#sequence" data-jump>Sequence</a>
   </nav>
@@ -681,6 +756,26 @@
         <div class="ico">▣</div><h3>Dimension</h3><p>Perspective tilt on the Y &amp; X axes gives every card real depth.</p></div>
       <div class="spot-card" string="spotlight|cursor" string-id="sp3" string-lerp="0.12" string-cursor-target="default" string-cursor-class="-view">
         <div class="ico">✦</div><h3>Composition</h3><p>Two modules, one element — spotlight and cursor share a single object.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ +3D WEBGL (Three.js) ============ -->
+  <section class="wrap" id="webgl">
+    <div class="sec-head"><span class="sec-no">+3D</span><span class="sec-tag">WebGL · Three.js</span></div>
+    <h2 class="sec-title">A <span class="ac">real</span> WebGL scene, driven by StringTune.</h2>
+    <p class="sec-desc">A Three.js wireframe icosahedron + particle field. Scroll progress drives its rotation, the StringLerp scroll-velocity channel displaces its vertices, and the global cursor event tilts the whole scene. Pure WebGL — pauses offscreen, halves point count on mobile, and renders a single static frame under <span class="mono">prefers-reduced-motion</span>.</p>
+    <div class="webgl-stage" id="webglStage">
+      <canvas id="webgl-canvas"></canvas>
+      <div class="webgl-fallback" aria-hidden="true">
+        <div class="ico">◍</div>
+        <div>WebGL isn't available here — the CSS fallback is shown instead. The rest of the page is unaffected.</div>
+      </div>
+      <div class="webgl-stack" aria-hidden="true">three r160 · ES module</div>
+      <div class="webgl-read" aria-live="polite">
+        <span>scroll <b id="webglScroll">0%</b></span>
+        <span>velocity <b id="webglVel">0</b></span>
+        <span>vertices <b id="webglVerts">—</b></span>
+      </div>
     </div>
   </section>
 
@@ -1001,6 +1096,51 @@
     </div>
   </section>
 
+  <!-- ============ +A MASONRY ============ -->
+  <section class="wrap" id="masonry">
+    <div class="sec-head"><span class="sec-no">+A</span><span class="sec-tag">Masonry · media</span></div>
+    <h2 class="sec-title">Uneven tiles <span class="ac">reflow</span> as you scroll.</h2>
+    <p class="sec-desc">StringMasonry lays out a column-based grid and re-flows on resize, reshuffle and scroll. Each tile maps its own scroll progress to opacity + lift through StringTune — pure CSS renders the motion.</p>
+    <div class="masonry-grid" id="masonryGrid">
+      <div class="masonry-card" string="masonry|progress" string-id="ms1" string-offset-top="-15%" style="--ratio:16/10"><div class="ph" aria-hidden="true"></div><div class="cap"><b>Gradient A</b><span>rhythm 16:10</span></div></div>
+      <div class="masonry-card" string="masonry|progress" string-id="ms2" string-offset-top="-20%" style="--ratio:4/5"><div class="ph b" aria-hidden="true"></div><div class="cap"><b>Gradient B</b><span>portrait</span></div></div>
+      <div class="masonry-card" string="masonry|progress" string-id="ms3" string-offset-top="-10%" style="--ratio:1/1"><div class="ph c" aria-hidden="true"></div><div class="cap"><b>Gradient C</b><span>square</span></div></div>
+      <div class="masonry-card" string="masonry|progress" string-id="ms4" string-offset-top="-25%" style="--ratio:4/5"><div class="ph d" aria-hidden="true"></div><div class="cap"><b>Gradient D</b><span>portrait</span></div></div>
+      <div class="masonry-card" string="masonry|progress" string-id="ms5" string-offset-top="-15%" style="--ratio:3/2"><div class="ph e" aria-hidden="true"></div><div class="cap"><b>Gradient E</b><span>landscape</span></div></div>
+      <div class="masonry-card" string="masonry|progress" string-id="ms6" string-offset-top="-20%" style="--ratio:16/10"><div class="ph f" aria-hidden="true"></div><div class="cap"><b>Gradient F</b><span>rhythm 16:10</span></div></div>
+    </div>
+  </section>
+
+  <!-- ============ +B LAZY MEDIA + AUTOPLAY ============ -->
+  <section class="wrap" id="lazy">
+    <div class="sec-head"><span class="sec-no">+B</span><span class="sec-tag">Lazy · autoplay</span></div>
+    <h2 class="sec-title">Defer heavy media, <span class="ac">reveal</span> it in view.</h2>
+    <p class="sec-desc">StringLazy defers the load of poster images until they near the viewport; StringVideoAutoplay starts a muted, inline video on inview and pauses it the instant it scrolls away — battery-friendly and mobile-safe.</p>
+    <div class="lazy-grid">
+      <div class="lazy-media" string="progress" string-id="lazyMedia" string-offset-top="-20%">
+        <img class="lazy-poster" alt="Lazy gradient poster"
+             src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 500'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%238a6bff'/%3E%3Cstop offset='1' stop-color='%2337e6ff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100%25' height='100%25' fill='url(%23g)'/%3E%3C/svg%3E"
+             string="lazy" string-id="lazyPoster" />
+        <video class="lazy-video" muted loop playsinline webkit-playsinline="true" preload="none" poster=""
+               string="video-autoplay" string-id="lazyVideo">
+          <source data-src="https://cdn.coverr.co/videos/coverr-a-mountain-road-at-dusk-1080p.mp4" type="video/mp4" />
+        </video>
+      </div>
+      <div class="lazy-aside">
+        <div class="lazy-tile" string="progress" string-id="lazyTile1" string-offset-top="-25%">
+          <img alt="Tile A" loading="lazy" string="lazy" string-id="lazyImg1"
+               src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 400'%3E%3Cdefs%3E%3ClinearGradient id='g1' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23c8ff2e'/%3E%3Cstop offset='1' stop-color='%23378b2a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100%25' height='100%25' fill='url(%23g1)'/%3E%3C/svg%3E" />
+          <span class="cap">deferred · tile A</span>
+        </div>
+        <div class="lazy-tile" string="progress" string-id="lazyTile2" string-offset-top="-25%">
+          <img alt="Tile B" loading="lazy" string="lazy" string-id="lazyImg2"
+               src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 400'%3E%3Cdefs%3E%3ClinearGradient id='g2' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff5a8a'/%3E%3Cstop offset='1' stop-color='%238a6bff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100%25' height='100%25' fill='url(%23g2)'/%3E%3C/svg%3E" />
+          <span class="cap">deferred · tile B</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ 14 / 15 DIAGNOSTICS ============ -->
   <section class="wrap" id="diagnostics">
     <div class="sec-head"><span class="sec-no">14 · 15</span><span class="sec-tag">Diagnostics</span></div>
@@ -1029,14 +1169,14 @@
     <div class="foot-top">
       <h2>Build motion <span style="color:var(--lime)">without</span> the boilerplate.</h2>
       <div class="foot-cols">
-        <div><h5>Modules</h5><a href="#reveal" data-jump>Reveal</a><a href="#parallax" data-jump>Parallax</a><a href="#spotlight" data-jump>Spotlight</a><a href="#impulse" data-jump>Impulse</a></div>
-        <div><h5>System</h5><a href="#forms" data-jump>Forms</a><a href="#sequence" data-jump>Sequence</a><a href="#diagnostics" data-jump>Diagnostics</a></div>
-        <div><h5>Links</h5><a href="https://string-tune.fiddle.digital" target="_blank" rel="noopener">Homepage</a><a href="https://tune.fiddle.digital" target="_blank" rel="noopener">Docs</a><a href="https://www.npmjs.com/package/@fiddle-digital/string-tune" target="_blank" rel="noopener">npm</a></div>
+        <div><h5>Modules</h5><a href="#reveal" data-jump>Reveal</a><a href="#parallax" data-jump>Parallax</a><a href="#spotlight" data-jump>Spotlight</a><a href="#impulse" data-jump>Impulse</a><a href="#masonry" data-jump>Masonry</a></div>
+        <div><h5>System</h5><a href="#webgl" data-jump>WebGL</a><a href="#lazy" data-jump>Lazy media</a><a href="#forms" data-jump>Forms</a><a href="#sequence" data-jump>Sequence</a><a href="#diagnostics" data-jump>Diagnostics</a></div>
+        <div><h5>Links</h5><a href="https://string-tune.fiddle.digital" target="_blank" rel="noopener">Homepage</a><a href="https://tune.fiddle.digital" target="_blank" rel="noopener">Docs</a><a href="https://www.npmjs.com/package/@fiddle-digital/string-tune" target="_blank" rel="noopener">npm</a><a href="https://threejs.org" target="_blank" rel="noopener">Three.js</a></div>
       </div>
     </div>
     <div class="foot-bot">
-      <span>© 2026 — demo landing built with StringTune by fiddle.digital</span>
-      <span>HTML · CSS · JS — no framework</span>
+      <span>© 2026 — demo landing built with StringTune × anime.js × Three.js by fiddle.digital</span>
+      <span>HTML · CSS · JS — no framework · WebGL with CSS fallback</span>
     </div>
   </footer>
 
@@ -1058,6 +1198,20 @@
 (function () {
   function $(s, c) { return (c || document).querySelector(s); }
   function $all(s, c) { return Array.prototype.slice.call((c || document).querySelectorAll(s)); }
+  // Respect the OS reduced-motion setting — ambient loops and the WebGL RAF loop gate on this.
+  function prefersReducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+  // Make a click-activated demo element keyboard-activatable (tabbable + Enter/Space fires its click).
+  function makeActivatable(el, label) {
+    if (!el) return;
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('role', 'button');
+    if (label) el.setAttribute('aria-label', label);
+    el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+    });
+  }
 
   // ---- DEFENSIVE: guarantee the loader/veil never trap the page ----
   // If anything below throws or a CDN fails, this dismisses the overlays so
@@ -1103,6 +1257,10 @@
       st.use(ST.StringFPSTracker);
       st.use(ST.StringPositionTracker);
       try { st.use(ST.StringSequence); } catch (e) {}
+      // newly exercised modules (present in 1.2.0, unused in the original demo)
+      try { st.use(ST.StringMasonry); } catch (e) {}
+      try { st.use(ST.StringLazy); } catch (e) {}
+      try { st.use(ST.StringVideoAutoplay); } catch (e) {}
 
       st.start(60);
     } catch (err) {
@@ -1112,12 +1270,26 @@
       return;
     }
 
+    // --- shared state for the Three.js WebGL scene (section +3D) ---
+    // Published here so the module script can read live scroll / cursor values without
+    // a second subscription channel.
+    window.__stringState = { scroll: 0, scrollPct: 0, mx: 0.5, my: 0.5, ready: true };
+
     // --- nav progress bar + diagnostics driven by the Position tracker channel ---
     var navBar = $('#navBar');
     st.on('scroll-position', function (d) {
       var p = (d && typeof d.valPct === 'number') ? d.valPct / 100 : 0;
       if (navBar) navBar.style.transform = 'scaleX(' + p + ')';
+      window.__stringState.scrollPct = p;
     });
+    // cursor channel — normalized pointer position for the WebGL parallax tilt
+    try {
+      st.on('cursor', function (d) {
+        if (!d) return;
+        if (typeof d.x === 'number') window.__stringState.mx = d.x;
+        if (typeof d.y === 'number') window.__stringState.my = d.y;
+      });
+    } catch (e) {}
 
     // --- Progress readout (section 03) ---
     var progRead = $('#progRead');
@@ -1167,13 +1339,15 @@
       });
     });
 
-    // safety: if for any reason content is stuck hidden, reveal after load
+    // safety: if for any reason content is stuck hidden, reveal after load.
+    // also hard-dismiss the loader/veil on load in case the anime timeline never completes.
     window.addEventListener('load', function () {
       setTimeout(function () {
         if (!document.querySelector('.-s-char') && $('.hero-title')) {
           document.documentElement.classList.add('no-st');
         }
       }, 1200);
+      setTimeout(dismissOverlays, 2600);
     });
 
     // hand off to the anime.js layer, passing the live StringTune instance
@@ -1270,7 +1444,7 @@
           duration: 900, ease: 'outExpo'
         }, '-=800');
     }
-    if (svgCard) { svgCard.addEventListener('click', playSvg); setTimeout(playSvg, 2200); }
+    if (svgCard) { makeActivatable(svgCard, 'Replay the SVG line-draw animation'); svgCard.addEventListener('click', playSvg); setTimeout(playSvg, 2200); }
 
     // ---- [4] SPRING entrances (replay on click) ----
     var springRow = $('#ajSpringRow');
@@ -1287,7 +1461,7 @@
         });
       });
     }
-    if (springRow) { springRow.addEventListener('click', playSprings); setTimeout(playSprings, 2500); }
+    if (springRow) { makeActivatable(springRow, 'Replay the spring entrance cards'); springRow.addEventListener('click', playSprings); setTimeout(playSprings, 2500); }
 
     // ---- [5] STAGGER grid ----
     var stgGrid = $('#ajStgGrid');
@@ -1321,8 +1495,8 @@
           playStagger(f === 'first' ? 0 : f === 'last' ? stgCells.length - 1 : f);
         });
       });
-      // ambient replay
-      setInterval(function () { playStagger('center'); }, 3800);
+      // ambient replay (skipped under prefers-reduced-motion)
+      if (!prefersReducedMotion()) setInterval(function () { playStagger('center'); }, 3800);
       setTimeout(function () { playStagger('center'); }, 3000);
     }
 
@@ -1349,7 +1523,7 @@
         });
       };
       if (colorHex) colorHex.textContent = palette[0].toUpperCase();
-      setInterval(nextColor, 1400);
+      if (!prefersReducedMotion()) setInterval(nextColor, 1400);
     }
 
     // ---- [8] LOOP — ambient orbits ----
@@ -1367,10 +1541,17 @@
         duration: dur, ease: 'linear', loop: true
       });
     }
-    orbit('#ajOrb1', 60, 4000, 1);
-    orbit('#ajOrb2', 100, 6500, -1);
-    orbit('#ajOrb3', 80, 5200, 1);
-    orbit('#ajOrb4', 40, 3200, -1);
+    if (prefersReducedMotion()) {
+      // under reduced motion the orbits sit on their starting positions (center)
+      ['#ajOrb1', '#ajOrb2', '#ajOrb3', '#ajOrb4'].forEach(function (s) {
+        utils.set(s, { translateX: 0, translateY: 0 });
+      });
+    } else {
+      orbit('#ajOrb1', 60, 4000, 1);
+      orbit('#ajOrb2', 100, 6500, -1);
+      orbit('#ajOrb3', 80, 5200, 1);
+      orbit('#ajOrb4', 40, 3200, -1);
+    }
 
     // ---- [9] DRAGGABLE with momentum ----
     if (createDraggable) {
@@ -1507,8 +1688,11 @@
         });
       }
       frame.addEventListener('click', race);
+      frame.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); race(); }
+      });
       setTimeout(race, 2800);
-      setInterval(race, 6000);
+      if (!prefersReducedMotion()) setInterval(race, 6000);
     })();
 
     // ---- [13] MOTION PATH — HTML element follows SVG geometry ----
@@ -1519,7 +1703,8 @@
         var mp = svg.createMotionPath(path);
         animate(ship, {
           translateX: mp.translateX, translateY: mp.translateY, rotate: mp.rotate,
-          duration: 5000, ease: 'inOutSine', loop: true, alternate: true
+          duration: 5000, ease: 'inOutSine',
+          loop: !prefersReducedMotion(), alternate: true
         });
       } catch (e) { ship.style.display = 'none'; }
     })();
@@ -1531,7 +1716,8 @@
       try {
         animate(poly, {
           points: svg.morphTo(target),
-          duration: 2200, ease: 'inOutQuad', loop: true, alternate: true
+          duration: 2200, ease: 'inOutQuad',
+          loop: !prefersReducedMotion(), alternate: true
         });
       } catch (e) {}
     })();
@@ -1581,6 +1767,7 @@
         });
       }
       card.addEventListener('click', playText);
+      makeActivatable(card, 'Replay the text-split scramble animation');
       setTimeout(playText, 3200);
     })();
 
@@ -1616,6 +1803,7 @@
         } catch (e) {}
       }
       card.addEventListener('click', playWaapi);
+      makeActivatable(card, 'Replay the WAAPI box animation');
       setTimeout(playWaapi, 3400);
     })();
 
@@ -1678,6 +1866,189 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
+</script>
+
+<!-- ============ +3D WEBGL — Three.js scene (ES module) ============ -->
+<!-- Reads window.__stringState (scroll + cursor) published by the StringTune IIFE above,
+     and polls the StringLerp --lerp CSS var for vertex displacement. Degrades to a CSS
+     fallback (body.no-webgl) when WebGL/importmap is unavailable. -->
+<script type="module">
+  import * as THREE from 'three';
+
+  const canvas = document.getElementById('webgl-canvas');
+  const stage = document.getElementById('webglStage');
+  const readScroll = document.getElementById('webglScroll');
+  const readVel = document.getElementById('webglVel');
+  const readVerts = document.getElementById('webglVerts');
+  const lerpStage = document.querySelector('[string-id="lerp-stage"]');
+
+  const prefersReducedMotion =
+    window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const isMobile = window.matchMedia && window.matchMedia('(max-width: 760px)').matches;
+
+  function fail() { document.documentElement.classList.add('no-webgl'); }
+
+  // WebGL availability check — bail to CSS fallback if absent.
+  function webglOK() {
+    try {
+      const c = document.createElement('canvas');
+      return !!(window.WebGLRenderingContext &&
+        (c.getContext('webgl') || c.getContext('experimental-webgl')));
+    } catch (e) { return false; }
+  }
+  if (!canvas || !stage || !webglOK() || !THREE.WebGLRenderer) { fail(); }
+
+  try {
+    const renderer = new THREE.WebGLRenderer({
+      canvas, alpha: true, antialias: !isMobile, powerPreference: 'high-performance'
+    });
+    renderer.setClearColor(0x000000, 0);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1 : 2));
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    camera.position.set(0, 0, 5);
+
+    // ---- wireframe icosahedron (vertex-displaced by StringLerp velocity) ----
+    const icoGeo = new THREE.IcosahedronGeometry(1.4, isMobile ? 1 : 2);
+    const basePos = Float32Array.from(icoGeo.attributes.position.array); // immutable copy
+    const wire = new THREE.Mesh(
+      icoGeo,
+      new THREE.MeshBasicMaterial({ color: 0xc8ff2e, wireframe: true, transparent: true, opacity: 0.85 })
+    );
+    scene.add(wire);
+
+    // inner glow shell
+    const glow = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(1.05, 1),
+      new THREE.MeshBasicMaterial({ color: 0x8a6bff, transparent: true, opacity: 0.18 })
+    );
+    scene.add(glow);
+
+    // ---- particle field ----
+    const PCOUNT = isMobile ? 1800 : 3800;
+    const ppos = new Float32Array(PCOUNT * 3);
+    const pcol = new Float32Array(PCOUNT * 3);
+    const palette = [
+      [0.78, 1.0, 0.18],   // lime
+      [0.54, 0.42, 1.0],   // violet
+      [0.21, 0.9, 1.0]     // cyan
+    ];
+    for (let i = 0; i < PCOUNT; i++) {
+      // distribute in a spherical shell around the icosahedron
+      const r = 2.2 + Math.random() * 2.6;
+      const t = Math.random() * Math.PI * 2;
+      const ph = Math.acos(2 * Math.random() - 1);
+      ppos[i * 3]     = r * Math.sin(ph) * Math.cos(t);
+      ppos[i * 3 + 1] = r * Math.sin(ph) * Math.sin(t);
+      ppos[i * 3 + 2] = r * Math.cos(ph);
+      const c = palette[i % 3];
+      pcol[i * 3] = c[0]; pcol[i * 3 + 1] = c[1]; pcol[i * 3 + 2] = c[2];
+    }
+    const pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute('position', new THREE.BufferAttribute(ppos, 3));
+    pGeo.setAttribute('color', new THREE.BufferAttribute(pcol, 3));
+    const points = new THREE.Points(
+      pGeo,
+      new THREE.PointsMaterial({
+        size: 0.035, vertexColors: true, transparent: true, opacity: 0.9,
+        depthWrite: false, blending: THREE.AdditiveBlending
+      })
+    );
+    scene.add(points);
+
+    if (readVerts) readVerts.textContent = String(PCOUNT + icoGeo.attributes.position.count);
+
+    // ---- live state from StringTune (published by the IIFE) + --lerp poll ----
+    const S = window.__stringState = window.__stringState || { scrollPct: 0, mx: 0.5, my: 0.5 };
+    function readLerp() {
+      // StringLerp writes a signed value to --lerp on its stage element; reuse it for displacement.
+      if (!lerpStage) return 0;
+      const v = getComputedStyle(lerpStage).getPropertyValue('--lerp');
+      const n = parseFloat(v);
+      return isFinite(n) ? n : 0;
+    }
+
+    // ---- resize ----
+    function resize() {
+      const w = Math.max(1, stage.clientWidth);
+      const h = Math.max(1, stage.clientHeight);
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // ---- offscreen pause (battery-friendly) ----
+    let visible = true;
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver((entries) => {
+        visible = entries[0] && entries[0].isIntersecting;
+      }, { threshold: 0.05 }).observe(stage);
+    }
+
+    // ---- render loop ----
+    let velocityDisplay = 0;
+    function tick() {
+      if (visible) {
+        const sp = S.scrollPct || 0;
+        const mx = (S.mx - 0.5);
+        const my = (S.my - 0.5);
+        const lerp = readLerp();
+
+        // rotation driven by scroll progress + a slow idle spin
+        wire.rotation.y = sp * Math.PI * 4 + performance.now() * 0.00012;
+        wire.rotation.x = sp * Math.PI * 1.5 + my * 0.6;
+        glow.rotation.copy(wire.rotation);
+        glow.rotation.y *= -1;
+
+        // camera parallax toward the cursor
+        camera.position.x += (mx * 1.1 - camera.position.x) * 0.05;
+        camera.position.y += (-my * 1.1 - camera.position.y) * 0.05;
+        camera.lookAt(0, 0, 0);
+
+        // vertex displacement from StringLerp scroll-velocity channel
+        const arr = icoGeo.attributes.position.array;
+        const disp = 1 + Math.min(0.4, Math.abs(lerp) * 0.5);
+        for (let i = 0; i < arr.length; i += 3) {
+          const bx = basePos[i], by = basePos[i + 1], bz = basePos[i + 2];
+          const len = Math.sqrt(bx * bx + by * by + bz * bz) || 1;
+          const k = 1 + (lerp * 0.25) * (0.6 + 0.4 * Math.sin(bx * 3 + by * 2));
+          arr[i]     = bx / len * 1.4 * disp * k;
+          arr[i + 1] = by / len * 1.4 * disp * k;
+          arr[i + 2] = bz / len * 1.4 * disp * k;
+        }
+        icoGeo.attributes.position.needsUpdate = true;
+        icoGeo.computeVertexNormals();
+
+        // particles drift slowly + counter-rotate
+        points.rotation.y = -sp * Math.PI * 2 + performance.now() * 0.00004;
+        points.rotation.x = sp * Math.PI;
+
+        renderer.render(scene, camera);
+
+        // telemetry (throttled visual write)
+        velocityDisplay = velocityDisplay * 0.8 + Math.abs(lerp) * 0.2;
+        if (readScroll) readScroll.textContent = Math.round(sp * 100) + '%';
+        if (readVel && (performance.now() | 0) % 4 === 0) {
+          readVel.textContent = velocityDisplay.toFixed(2);
+        }
+      }
+      if (!prefersReducedMotion) requestAnimationFrame(tick);
+    }
+
+    if (prefersReducedMotion) {
+      // render exactly one frame, no loop
+      camera.position.set(0, 0, 5);
+      renderer.render(scene, camera);
+    } else {
+      requestAnimationFrame(tick);
+    }
+  } catch (e) {
+    if (window.console) console.warn('Three.js init failed, using CSS fallback:', e);
+    fail();
+  }
 </script>
 </body>
 </html>
