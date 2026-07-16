@@ -1,0 +1,1683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>StringTune — A 3D Motion Runtime</title>
+<meta name="description" content="A 3D landing page built entirely with the StringTune runtime from fiddle.digital — scroll motion, cursor physics, spotlight lighting and more." />
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<!-- Tailwind (per requirements) -->
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+
+<!-- StringTune runtime -->
+<script src="https://cdn.jsdelivr.net/npm/@fiddle-digital/string-tune@1.2.0/dist/index.js"></script>
+
+<!-- anime.js v4 -->
+<script src="https://cdn.jsdelivr.net/npm/animejs@4/dist/bundles/anime.umd.min.js"></script>
+
+<style>
+  :root{
+    --bg:#060608; --bg-2:#0b0b11; --panel:#0e0e16;
+    --ink:#f3f3f8; --muted:#8b8b9c; --faint:#56566a;
+    --lime:#c8ff2e; --violet:#8a6bff; --cyan:#37e6ff;
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+    --maxw:1240px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+    line-height:1.5;
+  }
+  /* hide native cursor on fine-pointer devices (custom portal takes over) */
+  @media (pointer:fine){ body{cursor:none} a,button,input,textarea,select,label{cursor:none} }
+  h1,h2,h3,h4{font-family:'Space Grotesk',sans-serif;font-weight:600;margin:0;letter-spacing:-.02em;line-height:1.02}
+  p{margin:0}
+  a{color:inherit;text-decoration:none}
+  .mono{font-family:'JetBrains Mono',monospace;letter-spacing:.02em}
+  ::selection{background:var(--lime);color:#000}
+
+  /* ---- atmosphere ---- */
+  .bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  .blob{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5}
+  .blob.a{width:50vw;height:50vw;left:-12vw;top:-10vw;background:radial-gradient(circle,#5b3bff,transparent 62%)}
+  .blob.b{width:46vw;height:46vw;right:-14vw;top:18vh;background:radial-gradient(circle,#1d6b54,transparent 65%);opacity:.55}
+  .blob.c{width:40vw;height:40vw;left:25vw;bottom:-18vw;background:radial-gradient(circle,#6b5bff,transparent 66%);opacity:.35}
+  .grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.035;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+  .grid-lines{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.5;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:80px 80px;mask-image:radial-gradient(circle at 50% 0%,#000,transparent 75%)}
+
+  /* ---- custom cursor ---- */
+  .cursor{position:fixed;top:0;left:0;z-index:9999;pointer-events:none;
+    width:34px;height:34px;border:1px solid var(--lime);border-radius:50%;
+    transform:translate3d(calc(var(--x,0)*1px),calc(var(--y,0)*1px),0) translate(-50%,-50%);
+    transition:width .25s,height .25s,background .25s,border-color .25s,opacity .25s;mix-blend-mode:difference;opacity:.55}
+  .cursor .core{position:absolute;inset:0;margin:auto;width:5px;height:5px;border-radius:50%;background:var(--lime);
+    transform:translate(calc(var(--x,0)*0px),0)}
+  .cursor.-show{opacity:1;width:64px;height:64px;background:rgba(200,255,46,.08)}
+  .cursor.-view{width:84px;height:84px;background:var(--lime);border-color:var(--lime)}
+  .cursor.-view .core{background:#000;width:8px;height:8px}
+
+  /* ---- nav ---- */
+  .nav{position:fixed;top:0;left:0;right:0;z-index:200;display:flex;align-items:center;justify-content:space-between;
+    padding:18px clamp(18px,4vw,46px);mix-blend-mode:difference}
+  .brand{display:flex;align-items:center;gap:11px;font-family:'Space Grotesk';font-weight:700;font-size:18px;color:#fff}
+  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--lime);box-shadow:0 0 16px var(--lime)}
+  .nav-links{display:flex;gap:30px}
+  .nav-links a{font-size:13px;color:#cfcfe0;position:relative;font-weight:500}
+  .nav-links a:hover{color:#fff}
+  .nav-cta{position:relative}
+  .nav-cta .m-btn{display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:100px;
+    border:1px solid #fff;color:#fff;font-weight:600;font-size:13px;
+    transform:translate3d(calc(var(--magnetic-x,0)*1px),calc(var(--magnetic-y,0)*1px),0)}
+  .nav-cta .m-btn .arr{transition:transform .3s}
+  .nav-cta:hover .arr{transform:translateX(4px)}
+  .progress-bar{position:fixed;top:0;left:0;right:0;height:2px;z-index:201;background:transparent}
+  .progress-bar i{display:block;height:100%;width:100%;transform-origin:left;background:linear-gradient(90deg,var(--lime),var(--cyan));transform:scaleX(0)}
+
+  /* ---- layout ---- */
+  main{position:relative;z-index:2}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(20px,5vw,40px)}
+  section{position:relative;padding:clamp(90px,13vh,150px) 0}
+  .sec-head{display:flex;align-items:center;gap:14px;margin-bottom:24px}
+  .sec-no{font-family:'JetBrains Mono';font-size:13px;color:var(--lime);border:1px solid var(--line-2);
+    padding:5px 11px;border-radius:100px;background:rgba(200,255,46,.04)}
+  .sec-tag{font-family:'JetBrains Mono';font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.18em}
+  .sec-title{font-size:clamp(30px,5vw,58px);max-width:16ch}
+  .sec-title .ac{color:var(--lime)}
+  .sec-desc{color:var(--muted);max-width:54ch;margin-top:18px;font-size:clamp(15px,1.5vw,17px)}
+  .eyebrow{font-family:'JetBrains Mono';font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.22em}
+
+  /* ---- hero ---- */
+  .hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding-top:120px;padding-bottom:60px}
+  .hero .eyebrow{margin-bottom:26px;display:flex;align-items:center;gap:10px}
+  .hero .eyebrow::before{content:"";width:26px;height:1px;background:var(--lime)}
+  .hero-stage{position:relative}
+  .hero-card{transform:rotateY(calc(var(--x,0)*9deg)) rotateX(calc(var(--y,0)*-9deg));
+    transform-style:preserve-3d;transition:transform .25s ease-out;will-change:transform}
+  .hero-title{font-size:clamp(48px,11vw,168px);line-height:.92;font-weight:700;letter-spacing:-.04em}
+  .hero-title .-s-line{overflow:hidden;padding:.04em 0}
+  .hero-title .-s-char{display:inline-block;transform:translateY(110%) rotate(7deg);opacity:0;
+    animation:charIn 1s cubic-bezier(.16,.84,.18,1) forwards;
+    animation-delay:calc(var(--char-index,0)*.022s + var(--line-index,0)*.1s + .15s)}
+  .hero-title .out{-webkit-text-stroke:1.5px var(--ink);color:transparent}
+  @keyframes charIn{to{transform:none;opacity:1}}
+  .hero-sub{max-width:46ch;color:var(--muted);font-size:clamp(16px,1.8vw,20px);margin-top:34px}
+  .hero-row{display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin-top:40px}
+  .btn{position:relative}
+  .btn .m-btn{display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:100px;
+    font-weight:600;font-size:15px;
+    transform:translate3d(calc(var(--magnetic-x,0)*1px),calc(var(--magnetic-y,0)*1px),0)}
+  .btn.primary .m-btn{background:var(--lime);color:#06060a;border:1px solid var(--lime)}
+  .btn.ghost .m-btn{border:1px solid var(--line-2);color:var(--ink)}
+  .btn .m-btn .arr{transition:transform .3s}
+  .btn:hover .arr{transform:translate(3px,-3px)}
+  .hero-meta{display:flex;gap:34px;margin-top:54px;flex-wrap:wrap}
+  .hero-meta div{display:flex;flex-direction:column}
+  .hero-meta b{font-family:'Space Grotesk';font-size:30px;font-weight:700}
+  .hero-meta span{font-size:12px;color:var(--muted);font-family:'JetBrains Mono';text-transform:uppercase;letter-spacing:.12em}
+  .scroll-hint{position:absolute;bottom:24px;right:clamp(20px,5vw,40px);display:flex;align-items:center;gap:10px;
+    font-family:'JetBrains Mono';font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.18em}
+  .scroll-hint .bar{width:1px;height:46px;background:linear-gradient(var(--lime),transparent);
+    animation:drop 1.8s ease-in-out infinite}
+  @keyframes drop{0%,100%{transform:scaleY(.3);transform-origin:top;opacity:.4}50%{transform:scaleY(1);opacity:1}}
+
+  /* ---- marquee ---- */
+  .marquee{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:22px 0;overflow:hidden;white-space:nowrap}
+  .marquee-track{display:inline-flex;gap:50px;animation:scrollX 26s linear infinite;font-family:'Space Grotesk';font-size:clamp(22px,3vw,40px);font-weight:500}
+  .marquee-track span{display:inline-flex;align-items:center;gap:50px;color:#c9c9da}
+  .marquee-track span::after{content:"✦";color:var(--lime);font-size:.6em}
+  @keyframes scrollX{to{transform:translateX(-50%)}}
+
+  /* ---- generic card ---- */
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
+    border:1px solid var(--line);border-radius:18px;backdrop-filter:blur(6px)}
+  .tag{display:inline-block;font-family:'JetBrains Mono';font-size:11px;color:var(--cyan);
+    border:1px solid rgba(55,230,255,.3);padding:4px 10px;border-radius:100px;background:rgba(55,230,255,.06)}
+
+  /* ---- 01 reveal ---- */
+  .reveal-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:54px}
+  .reveal-card{padding:30px;border-radius:18px;min-height:230px;display:flex;flex-direction:column;justify-content:space-between;
+    opacity:var(--progress,0);transform:translateY(calc((1 - var(--progress,0)) * 60px));
+    will-change:opacity,transform}
+  .reveal-card h3{font-size:23px;margin-bottom:10px}
+  .reveal-card p{color:var(--muted);font-size:14px}
+  .reveal-card .num{font-family:'JetBrains Mono';color:var(--faint);font-size:13px}
+
+  /* ---- 02 parallax ---- */
+  .para-frame{position:relative;height:520px;border:1px solid var(--line);border-radius:22px;overflow:hidden;margin-top:50px;
+    background:radial-gradient(circle at 50% 120%,rgba(138,107,255,.18),transparent 60%)}
+  .para-layer{position:absolute}
+  .para-sun{inset:auto;left:50%;top:42%;width:200px;height:200px;margin-left:-100px;border-radius:50%;
+    background:radial-gradient(circle,var(--lime),rgba(200,255,46,.1) 60%,transparent 72%);filter:blur(1px)}
+  .para-rings{left:50%;top:50%;width:760px;height:760px;margin-left:-380px;margin-top:-380px;pointer-events:none}
+  .para-rings i{position:absolute;inset:0;border:1px solid var(--line-2);border-radius:50%}
+  .para-rings i:nth-child(2){inset:9%}.para-rings i:nth-child(3){inset:20%}.para-rings i:nth-child(4){inset:33%}
+  .para-floor{left:0;right:0;bottom:0;height:230px;
+    background:linear-gradient(transparent,rgba(138,107,255,.25));border-top:1px solid var(--violet);
+    background-image:repeating-linear-gradient(90deg,transparent 0 78px,var(--line-2) 78px 79px),
+    repeating-linear-gradient(0deg,transparent 0 38px,var(--line) 38px 39px)}
+  .para-label{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;z-index:3}
+  .para-label h3{font-size:clamp(34px,6vw,72px)}
+
+  /* ---- 03 progress ---- */
+  .prog-demo{display:flex;gap:48px;align-items:center;flex-wrap:wrap;margin-top:50px}
+  .prog-box{width:clamp(180px,26vw,260px);height:clamp(180px,26vw,260px);border-radius:26px;position:relative;
+    border:1px solid var(--line-2);
+    background:conic-gradient(from calc(var(--progress,0)*1turn),var(--lime),var(--violet),var(--cyan),var(--lime));
+    transform:rotate(calc(var(--progress,0)*180deg)) scale(calc(.7 + var(--progress,0)*.3));
+    will-change:transform}
+  .prog-box::after{content:"";position:absolute;inset:14%;border-radius:18px;background:var(--bg);
+    box-shadow:inset 0 0 40px rgba(0,0,0,.6)}
+  .prog-info{flex:1;min-width:240px}
+  .prog-read{font-family:'Space Grotesk';font-size:clamp(50px,9vw,96px);font-weight:700;line-height:1}
+  .prog-read .pct{color:var(--lime)}
+  .prog-bar{height:6px;border-radius:10px;background:var(--line);overflow:hidden;margin-top:20px}
+  .prog-bar i{display:block;height:100%;width:100%;transform-origin:left;background:var(--lime);transform:scaleX(var(--progress,0))}
+
+  /* ---- 04 lerp ---- */
+  .lerp-stage{margin-top:46px;border:1px solid var(--line);border-radius:22px;padding:clamp(40px,8vw,90px) 30px;text-align:center;overflow:hidden;
+    background:radial-gradient(circle at 50% 50%,rgba(55,230,255,.06),transparent 60%)}
+  .lerp-word{font-family:'Space Grotesk';font-weight:700;font-size:clamp(44px,13vw,200px);line-height:.9;letter-spacing:-.03em;
+    display:inline-block;
+    transform:skewX(calc(var(--lerp,0)*10deg)) translateX(calc(var(--lerp,0)*40px));
+    will-change:transform}
+  .lerp-word .a{color:var(--lime)}.lerp-word .b{color:#fff;-webkit-text-stroke:2px #fff;color:transparent}
+  .lerp-hint{font-family:'JetBrains Mono';color:var(--muted);font-size:13px;margin-top:14px}
+
+  /* ---- 05 glide ---- */
+  .glide-row{display:flex;gap:24px;margin-top:48px;padding:10px}
+  .glide-card{flex:1;min-width:180px;height:280px;border-radius:20px;border:1px solid var(--line);padding:26px;
+    display:flex;flex-direction:column;justify-content:flex-end;
+    background:linear-gradient(160deg,rgba(138,107,255,.16),rgba(255,255,255,.02))}
+  .glide-card b{font-family:'Space Grotesk';font-size:26px}
+  .glide-card span{font-family:'JetBrains Mono';font-size:12px;color:var(--muted)}
+
+  /* ---- 06 cursor ---- */
+  .cursor-demo{display:grid;grid-template-columns:repeat(2,1fr);gap:22px;margin-top:48px}
+  .cursor-zone{position:relative;height:240px;border-radius:20px;border:1px dashed var(--line-2);overflow:hidden;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    transform:translate3d(calc(var(--x,0)*14px),calc(var(--y,0)*14px),0);transition:transform .15s}
+  .cursor-zone h4{font-size:22px}
+  .cursor-zone p{color:var(--muted);font-size:13px}
+  .cursor-zone .pip{width:14px;height:14px;border-radius:50%;background:var(--lime);
+    transform:translate(calc(var(--x,0)*60px),calc(var(--y,0)*60px));transition:transform .1s;box-shadow:0 0 18px var(--lime)}
+
+  /* ---- 07 magnetic ---- */
+  .mag-cluster{display:flex;flex-wrap:wrap;gap:18px;margin-top:46px;align-items:center}
+  .mag-btn{display:inline-flex;align-items:center;gap:10px;padding:16px 28px;border-radius:100px;font-weight:600;font-size:15px;
+    transform:translate3d(calc(var(--magnetic-x,0)*1px),calc(var(--magnetic-y,0)*1px),0)}
+  .mag-btn.lime{background:var(--lime);color:#06060a;border:1px solid var(--lime)}
+  .mag-btn.out{border:1px solid var(--line-2);color:var(--ink)}
+  .mag-btn.solid{background:#fff;color:#000}
+  .mag-orb{width:96px;height:96px;border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--violet),#2a1d6b);
+    display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;
+    transform:translate3d(calc(var(--magnetic-x,0)*1px),calc(var(--magnetic-y,0)*1px),0)}
+
+  /* ---- 08 spotlight ---- */
+  .spot-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:50px}
+  .spot-card{position:relative;border-radius:20px;border:1px solid var(--line);overflow:hidden;padding:34px 28px;min-height:300px;
+    background:#0a0a12;
+    transform:perspective(900px) rotateY(calc(var(--x,0)*12deg)) rotateX(calc(var(--y,0)*-12deg));
+    transform-style:preserve-3d;transition:transform .2s ease-out}
+  .spot-card::before{content:"";position:absolute;left:50%;top:50%;width:62%;height:62%;border-radius:50%;
+    pointer-events:none;background:radial-gradient(circle,rgba(200,255,46,.28),transparent 68%);
+    transform:translate(-50%,-50%) rotate(calc((var(--spotlight-angle,0) + 90)*1deg)) translate(calc(var(--spotlight-distance,0)*1px),0);
+    filter:blur(14px);z-index:1}
+  .spot-card::after{content:"";position:absolute;inset:0;border-radius:20px;pointer-events:none;z-index:1;
+    background:radial-gradient(circle at 50% 0%,rgba(138,107,255,.16),transparent 55%)}
+  .spot-card>*{position:relative;z-index:2}
+  .spot-card .ico{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:24px;
+    background:rgba(200,255,46,.1);border:1px solid rgba(200,255,46,.25);margin-bottom:24px}
+  .spot-card h3{font-size:22px;margin-bottom:10px}
+  .spot-card p{color:var(--muted);font-size:14px}
+
+  /* ---- 09 impulse ---- */
+  .imp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-top:50px}
+  .imp-card{border-radius:18px;border:1px solid var(--line);padding:24px;min-height:200px;
+    background:linear-gradient(160deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
+    transform:translate3d(calc(var(--push-x,0)*1px),calc(var(--push-y,0)*1px),0) rotate(calc(var(--push-rotation,0)*1deg));
+    transform-origin:center center;will-change:transform}
+  .imp-card b{display:block;font-family:'Space Grotesk';font-size:20px;margin-top:14px}
+  .imp-card span{font-family:'JetBrains Mono';font-size:11px;color:var(--cyan)}
+
+  /* ---- 10 split ---- */
+  .split-stage{margin-top:46px;border:1px solid var(--line);border-radius:22px;padding:clamp(46px,9vw,100px) 30px;text-align:center;
+    background:radial-gradient(circle at 50% 0%,rgba(138,107,255,.12),transparent 60%)}
+  .split-line{font-family:'Space Grotesk';font-weight:700;font-size:clamp(40px,11vw,150px);line-height:.95;letter-spacing:-.03em}
+  .split-line .-s-line{overflow:hidden;padding:.04em 0}
+  .split-line .-s-char{display:inline-block;transform:translateY(105%);opacity:0;
+    animation:charIn .8s cubic-bezier(.16,.84,.18,1) forwards;
+    animation-delay:calc(var(--char-index,0)*.018s + var(--line-index,0)*.15s)}
+  .split-line .ac{color:var(--lime)}
+
+  /* ---- forms ---- */
+  .forms-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:50px;align-items:start}
+  .fcard{padding:26px;border-radius:18px;border:1px solid var(--line);background:var(--panel)}
+  .fcard h3{font-size:19px;margin-bottom:6px}
+  .fcard .fdesc{color:var(--muted);font-size:13px;margin-bottom:20px}
+  .fcard .field{margin-bottom:16px}
+  .fcard label{display:block;font-size:12px;color:var(--muted);margin-bottom:7px;font-family:'JetBrains Mono';text-transform:uppercase;letter-spacing:.08em}
+  .fcard input,.fcard textarea,.fcard select{width:100%;background:#08080d;border:1px solid var(--line-2);color:var(--ink);
+    border-radius:10px;padding:13px 14px;font-family:inherit;font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s}
+  .fcard input:focus,.fcard textarea:focus,.fcard select:focus{border-color:var(--lime);box-shadow:0 0 0 3px rgba(200,255,46,.12)}
+  .fcard textarea{resize:vertical;min-height:80px}
+  .fcard .field.-valid input{border-color:rgba(200,255,46,.5)}
+  .fcard .field.-invalid input,.fcard .field.-error input{border-color:#ff5a6e;box-shadow:0 0 0 3px rgba(255,90,110,.12)}
+  .fcard .errors{min-height:16px;font-size:12px;color:#ff8a98;margin-top:6px}
+  .fcard .errors span{display:block}
+  .fcard .choice{display:inline-flex;align-items:center;gap:8px;margin-right:16px;font-size:14px;color:var(--muted)}
+  .fcard button{width:100%;margin-top:8px;padding:13px;border-radius:10px;border:0;background:var(--lime);color:#06060a;
+    font-weight:700;font-size:14px;font-family:inherit}
+  .fcard .form-msg{margin-top:12px;font-size:13px;font-family:'JetBrains Mono';min-height:18px}
+  .fcard .form-msg.ok{color:var(--lime)}.fcard .form-msg.bad{color:#ff8a98}
+
+  /* ---- sequence ---- */
+  .seq-frame{margin-top:50px;border:1px solid var(--line);border-radius:22px;overflow:hidden}
+  .seq-top{display:flex;align-items:center;justify-content:space-between;padding:26px 30px;border-bottom:1px solid var(--line)}
+  .seq-top b{font-family:'JetBrains Mono';color:var(--muted);font-size:13px}
+  .seq-num{font-family:'Space Grotesk';font-weight:700;font-size:clamp(64px,16vw,220px);line-height:1;color:var(--lime);
+    padding:clamp(20px,5vw,50px) 30px;text-align:center;text-shadow:0 0 60px rgba(200,255,46,.4)}
+  .seq-bars{display:flex;gap:8px;padding:0 30px 30px}
+  .seq-step{flex:1;height:46px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.02);
+    display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono';font-size:12px;color:var(--faint);
+    transition:background .25s,color .25s,border-color .25s}
+  .seq-step.on{background:var(--lime);color:#06060a;border-color:var(--lime)}
+
+  /* ---- diagnostics ---- */
+  .diag{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:50px}
+  .diag-card{padding:30px;border-radius:18px;border:1px solid var(--line);background:var(--panel)}
+  .diag-card h3{font-size:20px;margin-bottom:6px}
+  .diag-card p{color:var(--muted);font-size:13px;margin-bottom:22px}
+  .diag-read{font-family:'JetBrains Mono';display:flex;flex-direction:column;gap:12px}
+  .diag-row{display:flex;justify-content:space-between;align-items:center;border-bottom:1px dashed var(--line);padding-bottom:10px}
+  .diag-row span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.1em}
+  .diag-row b{font-size:22px;color:var(--lime)}
+  .fps-val{font-family:'Space Grotesk';font-weight:700;font-size:clamp(48px,11vw,110px);line-height:1;color:var(--lime)}
+  .fps-val::after{content:" FPS";font-size:.32em;color:var(--muted)}
+
+  /* ---- fixed HUDs (the live trackers) ---- */
+  .hud{position:fixed;z-index:150;font-family:'JetBrains Mono';font-size:12px;background:rgba(8,8,14,.7);
+    border:1px solid var(--line-2);border-radius:12px;padding:12px 14px;backdrop-filter:blur(10px);
+    display:flex;flex-direction:column;gap:7px;min-width:120px}
+  .hud-h{display:flex;align-items:center;gap:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;font-size:10px}
+  .hud-h .led{width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 8px var(--lime);animation:pulse 1.4s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  .hud-pos{bottom:18px;left:18px}
+  .hud-pos .r{display:flex;justify-content:space-between;gap:18px}
+  .hud-pos .r b{color:var(--ink);font-weight:500}
+  .hud-fps{bottom:18px;right:18px}
+  .hud-fps .fpsval{font-size:20px;color:var(--lime);font-weight:700}
+  .hud-fps .fpsval::after{content:""}
+  [data-fps]::before{content:attr(data-fps)}
+  [data-val]::before{content:attr(data-val) "px"}
+  [data-val-pct]::before{content:attr(data-val-pct) "%"}
+  [data-dir]::before{content:attr(data-dir)}
+  @media(max-width:760px){.hud{display:none}}
+
+  /* ---- footer ---- */
+  footer{position:relative;z-index:2;border-top:1px solid var(--line);padding:70px 0 40px;margin-top:40px}
+  .foot-top{display:flex;justify-content:space-between;flex-wrap:wrap;gap:30px}
+  .foot-top h2{font-size:clamp(36px,7vw,90px);max-width:14ch}
+  .foot-cols{display:flex;gap:60px;flex-wrap:wrap}
+  .foot-cols h5{font-family:'JetBrains Mono';font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.14em;margin-bottom:14px}
+  .foot-cols a{display:block;color:#cfcef0;font-size:14px;padding:5px 0}
+  .foot-bot{display:flex;justify-content:space-between;align-items:center;margin-top:60px;padding-top:24px;border-top:1px solid var(--line);
+    font-family:'JetBrains Mono';font-size:12px;color:var(--faint);flex-wrap:wrap;gap:12px}
+
+  /* ---- responsive ---- */
+  @media(max-width:980px){
+    .reveal-grid,.spot-grid,.forms-grid,.imp-grid{grid-template-columns:repeat(2,1fr)}
+    .imp-grid{grid-template-columns:repeat(2,1fr)}
+    .diag{grid-template-columns:1fr}
+    .nav-links{display:none}
+  }
+  @media(max-width:620px){
+    .reveal-grid,.spot-grid,.forms-grid,.imp-grid,.cursor-demo,.diag{grid-template-columns:1fr}
+    .glide-row{flex-direction:column}
+    .hero-title{font-size:clamp(46px,15vw,90px)}
+  }
+
+  /* ============ ANIME.JS additions ============ */
+
+  /* [1] TIMELINE loader */
+  .aj-loader{position:fixed;inset:0;z-index:9998;background:#060608;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:24px}
+  .aj-loader.-gone{pointer-events:none}
+  .aj-loader .aj-brand{display:flex;align-items:center;gap:12px;opacity:0}
+  .aj-loader .aj-brand-dot{width:14px;height:14px;border-radius:50%;background:var(--lime);box-shadow:0 0 22px var(--lime)}
+  .aj-loader .aj-brand-name{font-family:'Space Grotesk';font-weight:700;letter-spacing:.2em;font-size:14px;color:#fff}
+  .aj-loader .aj-bar{width:min(240px,60vw);height:2px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden;opacity:0}
+  .aj-loader .aj-bar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--lime),var(--cyan))}
+  .aj-loader .aj-pct{font-family:'JetBrains Mono';font-size:11px;color:var(--muted);letter-spacing:.16em;opacity:0}
+  .aj-veil{position:fixed;inset:0;z-index:9997;background:#060608;transform-origin:bottom;pointer-events:none}
+
+  /* [2] KEYFRAMES badge */
+  .aj-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:100px;
+    background:rgba(200,255,46,.08);border:1px solid rgba(200,255,46,.25);
+    font-family:'JetBrains Mono';font-size:11px;color:var(--lime);text-transform:uppercase;letter-spacing:.14em;
+    margin-bottom:22px;cursor:pointer;user-select:none}
+  .aj-badge .aj-dot{width:6px;height:6px;border-radius:50%;background:var(--lime)}
+
+  /* [3] SVG draw-on */
+  .aj-svg-wrap{margin-top:50px;display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:center}
+  .aj-svg-card{padding:36px;border:1px solid var(--line);border-radius:22px;background:var(--panel);text-align:center;position:relative}
+  .aj-svg-card svg{width:100%;height:auto;max-width:420px;margin:0 auto;display:block}
+  .aj-svg-card .aj-svg-path{fill:none;stroke:var(--lime);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+  .aj-svg-card h4{font-size:18px;margin-top:20px}
+  .aj-svg-card p{color:var(--muted);font-size:13px;margin-top:6px}
+
+  /* [4] SPRING entrance cards */
+  .aj-spring-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:36px}
+  .aj-spring-card{padding:24px;border-radius:16px;border:1px solid var(--line);background:linear-gradient(160deg,rgba(200,255,46,.06),rgba(138,107,255,.04));
+    text-align:center;opacity:0;transform:translateY(60px) scale(.8)}
+  .aj-spring-card b{display:block;font-family:'Space Grotesk';font-size:26px;color:var(--lime)}
+  .aj-spring-card span{font-family:'JetBrains Mono';font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em}
+
+  /* [5] STAGGER grid */
+  .aj-stg-frame{margin-top:36px;padding:34px;border:1px solid var(--line);border-radius:22px;background:var(--panel)}
+  .aj-stg-controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+  .aj-stg-btn{padding:8px 14px;border-radius:100px;border:1px solid var(--line-2);background:transparent;color:var(--muted);
+    font-family:'JetBrains Mono';font-size:11px;text-transform:uppercase;letter-spacing:.1em;transition:.2s}
+  .aj-stg-btn.-on{background:var(--lime);color:#000;border-color:var(--lime)}
+  .aj-stg-grid{display:grid;grid-template-columns:repeat(14,1fr);gap:6px;aspect-ratio:14/5}
+  .aj-stg-cell{border-radius:4px;background:rgba(255,255,255,.06);transform:scale(1)}
+
+  /* [6] COUNTERS override hero-meta (still uses same b) */
+  .hero-meta b[data-count]{font-variant-numeric:tabular-nums}
+
+  /* [7] COLOR-TWEEN swatch */
+  .aj-color-row{display:flex;align-items:center;gap:22px;margin-top:36px;flex-wrap:wrap}
+  .aj-color-orb{width:120px;height:120px;border-radius:50%;background:#c8ff2e;
+    box-shadow:0 0 60px rgba(200,255,46,.4);flex-shrink:0}
+  .aj-color-info{flex:1;min-width:220px}
+  .aj-color-info h4{font-size:20px}
+  .aj-color-info p{color:var(--muted);font-size:13px;margin-top:6px}
+  .aj-color-hex{font-family:'JetBrains Mono';font-size:14px;color:var(--lime);margin-top:10px;text-transform:uppercase}
+
+  /* [8] LOOP ambient orbits */
+  .aj-orbit{position:absolute;pointer-events:none;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;
+    border-radius:50%;background:var(--lime);box-shadow:0 0 12px var(--lime)}
+  .aj-orbit.-v{background:var(--violet);box-shadow:0 0 12px var(--violet)}
+  .aj-orbit.-c{background:var(--cyan);box-shadow:0 0 12px var(--cyan)}
+
+  /* [9] DRAGGABLE */
+  .aj-drag-frame{position:relative;margin-top:36px;height:320px;border:1px dashed var(--line-2);border-radius:22px;overflow:hidden;
+    background:linear-gradient(180deg,rgba(138,107,255,.06),transparent);
+    background-image:radial-gradient(circle,rgba(255,255,255,.05) 1px,transparent 1px);background-size:22px 22px}
+  .aj-drag-hint{position:absolute;top:16px;left:20px;font-family:'JetBrains Mono';font-size:11px;
+    color:var(--muted);text-transform:uppercase;letter-spacing:.14em}
+  .aj-drag-chip{position:absolute;top:100px;left:60px;padding:18px 24px;border-radius:16px;background:var(--lime);color:#000;
+    font-family:'Space Grotesk';font-weight:700;font-size:16px;cursor:grab;user-select:none;
+    box-shadow:0 20px 50px rgba(200,255,46,.2)}
+  .aj-drag-chip.-dragging{cursor:grabbing}
+  .aj-drag-chip.-v{background:var(--violet);color:#fff;box-shadow:0 20px 50px rgba(138,107,255,.3);left:auto;right:70px;top:60px}
+  .aj-drag-chip.-c{background:var(--cyan);color:#000;box-shadow:0 20px 50px rgba(55,230,255,.25);left:40%;top:180px}
+
+  /* [10] PROMISE — celebration confetti in form cards */
+  .aj-confetti{position:absolute;width:8px;height:8px;pointer-events:none;border-radius:2px;top:50%;left:50%}
+  .fcard{position:relative;overflow:hidden}
+
+  /* [11] SCRUBBABLE timeline */
+  .aj-scrub-frame{margin-top:36px;padding:34px;border:1px solid var(--line);border-radius:22px;background:var(--panel)}
+  .aj-scrub-stage{position:relative;height:200px;margin-bottom:22px;display:flex;align-items:center;justify-content:center;gap:20px}
+  .aj-scrub-box{width:70px;height:70px;border-radius:14px;background:var(--lime);
+    display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;color:#000}
+  .aj-scrub-controls{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .aj-scrub-slider{flex:1;min-width:200px;height:4px;-webkit-appearance:none;appearance:none;background:var(--line-2);
+    border-radius:4px;outline:none}
+  .aj-scrub-slider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;background:var(--lime);
+    border-radius:50%;cursor:pointer;box-shadow:0 0 12px rgba(200,255,46,.6)}
+  .aj-scrub-slider::-moz-range-thumb{width:18px;height:18px;background:var(--lime);border:0;border-radius:50%;cursor:pointer}
+  .aj-scrub-btn{padding:8px 16px;border-radius:100px;border:1px solid var(--line-2);background:transparent;color:var(--ink);
+    font-family:'JetBrains Mono';font-size:11px;text-transform:uppercase;letter-spacing:.1em;cursor:pointer}
+  .aj-scrub-pct{font-family:'JetBrains Mono';font-size:12px;color:var(--lime);min-width:50px;text-align:right}
+
+  /* [12] EASES gallery */
+  .aj-ease-frame{margin-top:60px;padding:34px;border:1px solid var(--line);border-radius:22px;background:var(--panel)}
+  .aj-ease-rows{display:flex;flex-direction:column;gap:9px;margin-top:22px}
+  .aj-ease-row{display:flex;align-items:center;gap:16px}
+  .aj-ease-row .lbl{width:180px;flex-shrink:0;font-family:'JetBrains Mono';font-size:11px;color:var(--muted);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .aj-ease-track{flex:1;height:30px;border-radius:100px;border:1px solid var(--line);position:relative;background:rgba(255,255,255,.02);overflow:hidden}
+  .aj-ease-dot{position:absolute;left:4px;top:50%;width:22px;height:22px;margin-top:-11px;border-radius:50%;background:var(--lime);box-shadow:0 0 12px rgba(200,255,46,.45);will-change:transform}
+
+  /* [13–18] extended demo cards */
+  .aj-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:26px}
+  .aj-path-stage{position:relative}
+  .aj-ship{position:absolute;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;display:grid;place-items:center;
+    border-radius:50%;background:var(--lime);color:#000;font-size:14px;box-shadow:0 0 24px rgba(200,255,46,.55);will-change:transform}
+  .aj-textsplit{font-family:'Space Grotesk';font-weight:700;font-size:clamp(28px,5vw,54px);letter-spacing:-.02em;line-height:1.15}
+  .aj-textsplit .aj-char{display:inline-block;will-change:transform}
+  .aj-timer-read{font-family:'JetBrains Mono';font-size:clamp(34px,6vw,60px);font-weight:700;color:var(--lime);font-variant-numeric:tabular-nums;line-height:1}
+  .aj-timer-btns{display:flex;gap:10px;justify-content:center;margin-top:18px}
+  .aj-anim-zone{position:relative;height:240px;border:1px dashed var(--line-2);border-radius:18px;overflow:hidden;touch-action:none;
+    background:radial-gradient(circle at 50% 50%,rgba(55,230,255,.07),transparent 65%)}
+  .aj-anim-orb{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle at 35% 30%,#fff,var(--cyan) 45%,#0b3540);box-shadow:0 0 34px rgba(55,230,255,.5);will-change:transform}
+  .aj-waapi-row{display:flex;gap:30px;justify-content:center;align-items:center;padding:36px 0 26px}
+  .aj-waapi-box{width:62px;height:62px;border-radius:14%;background:linear-gradient(135deg,var(--lime),var(--cyan));will-change:transform}
+
+  /* [19] scroll-sync comet */
+  .aj-sync-frame{margin-top:26px;padding:34px;border:1px solid var(--line);border-radius:22px;background:var(--panel);overflow:hidden}
+  .aj-sync-track{position:relative;height:64px;border-radius:100px;border:1px solid var(--line);background:rgba(255,255,255,.02);margin-top:20px}
+  .aj-sync-comet{position:absolute;left:10px;top:50%;margin-top:-21px;width:42px;height:42px;border-radius:50%;
+    background:var(--lime);display:grid;place-items:center;color:#000;font-size:17px;box-shadow:0 0 30px rgba(200,255,46,.5);will-change:transform}
+
+  /* [20] playback-rate buttons share scrub styling */
+  .aj-scrub-btn.-on{background:var(--lime);color:#000;border-color:var(--lime)}
+
+  @media(max-width:820px){
+    .aj-svg-wrap,.aj-grid-2{grid-template-columns:1fr}
+    .aj-spring-row{grid-template-columns:repeat(2,1fr)}
+    .aj-stg-grid{grid-template-columns:repeat(10,1fr);aspect-ratio:10/5}
+    .aj-ease-row .lbl{width:100px}
+  }
+
+  /* ---- fallback if runtime fails ---- */
+  .no-st .reveal-card{opacity:1!important;transform:none!important}
+  .no-st .hero-title .-s-char,.no-st .split-line .-s-char{opacity:1!important;transform:none!important}
+  .no-st .prog-box{transform:rotate(40deg) scale(.9)}
+  .no-st .lerp-word{transform:none}
+  .no-st .seq-num{color:var(--lime)}
+  .no-st .seq-step:nth-child(-n+5){background:var(--lime);color:#000}
+  .no-st body{cursor:auto}
+</style>
+</head>
+<body>
+
+<!-- [1] anime.js TIMELINE loader -->
+<div class="aj-loader" id="ajLoader">
+  <div class="aj-brand" id="ajLoaderBrand">
+    <div class="aj-brand-dot"></div>
+    <div class="aj-brand-name">STRINGTUNE × ANIME.JS</div>
+  </div>
+  <div class="aj-bar" id="ajLoaderBar"><i></i></div>
+  <div class="aj-pct" id="ajLoaderPct">0%</div>
+</div>
+<div class="aj-veil" id="ajVeil"></div>
+
+<!-- atmosphere -->
+<div class="bg">
+  <div class="blob a"></div><div class="blob b"></div><div class="blob c"></div>
+</div>
+<div class="grid-lines"></div>
+<div class="grain"></div>
+
+<!-- custom cursor portal (StringCursor) -->
+<div class="cursor" string-cursor="default"><span class="core"></span></div>
+
+<!-- nav -->
+<div class="progress-bar"><i id="navBar"></i></div>
+<header class="nav">
+  <a class="brand" href="#top" data-jump><span class="dot"></span>STRINGTUNE</a>
+  <nav class="nav-links">
+    <a href="#parallax" data-jump>Motion</a>
+    <a href="#cursor" data-jump>Cursor</a>
+    <a href="#spotlight" data-jump>3D</a>
+    <a href="#forms" data-jump>Forms</a>
+    <a href="#sequence" data-jump>Sequence</a>
+  </nav>
+  <span class="nav-cta">
+    <a class="m-btn" string="magnetic" string-id="nav-cta" string-radius="120" string-strength="0.5"
+       href="#forms" data-jump>Get started <span class="arr">→</span></a>
+  </span>
+</header>
+
+<main id="top">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero wrap" string="cursor" string-cursor-target="default" string-cursor-class="-view">
+    <p class="eyebrow">A 3D motion runtime · 16 modules</p>
+    <!-- [2] anime.js KEYFRAMES badge -->
+    <div class="aj-badge" id="ajBadge"><span class="aj-dot"></span>Powered by StringTune + anime.js v4</div>
+    <div class="hero-stage">
+      <div class="hero-card">
+        <h1 class="hero-title" string="split" string-split="line[center]|char-line[center]">
+          Tune the<br><span class="out">web into</span><br>motion.
+        </h1>
+      </div>
+    </div>
+    <p class="hero-sub">StringTune is a modular JavaScript runtime from <b style="color:var(--ink)">fiddle.digital</b> for scroll-driven motion, cursor physics and interactive 3D — wired entirely through HTML attributes. This entire page runs on it.</p>
+    <div class="hero-row">
+      <span class="btn primary">
+        <a class="m-btn" string="magnetic" string-id="hero-primary" string-radius="140" string-strength="0.45" href="#parallax" data-jump>
+          Explore modules <span class="arr">↗</span>
+        </a>
+      </span>
+      <span class="btn ghost">
+        <a class="m-btn" string="magnetic" string-id="hero-ghost" string-radius="140" string-strength="0.4" href="https://string-tune.fiddle.digital" target="_blank" rel="noopener">
+          View docs
+        </a>
+      </span>
+    </div>
+    <div class="hero-meta">
+      <div><b data-count="16" data-suffix="">0</b><span>modules</span></div>
+      <div><b data-count="20" data-suffix="">0</b><span>anime.js features</span></div>
+      <div><b data-count="60" data-suffix="">0</b><span>fps target</span></div>
+      <div><b data-count="100" data-suffix="%">0</b><span>attribute-driven</span></div>
+    </div>
+    <div class="scroll-hint">Scroll <span class="bar"></span></div>
+  </section>
+
+  <!-- marquee -->
+  <div class="marquee">
+    <div class="marquee-track">
+      <span>Reveal</span><span>Parallax</span><span>Progress</span><span>Lerp</span><span>Glide</span><span>Cursor</span><span>Magnetic</span><span>Spotlight</span><span>Impulse</span><span>Split</span><span>Sequence</span>
+      <span>Reveal</span><span>Parallax</span><span>Progress</span><span>Lerp</span><span>Glide</span><span>Cursor</span><span>Magnetic</span><span>Spotlight</span><span>Impulse</span><span>Split</span><span>Sequence</span>
+    </div>
+  </div>
+
+  <!-- ============ 01 REVEAL ============ -->
+  <section class="wrap" id="reveal">
+    <div class="sec-head"><span class="sec-no">01</span><span class="sec-tag">Reveal on scroll</span></div>
+    <h2 class="sec-title">Elements <span class="ac">enter</span> as they travel into view.</h2>
+    <p class="sec-desc">Each card publishes its own scroll progress through StringTune, then we map that 0→1 value to opacity and position in pure CSS — staggered by entering at different offsets.</p>
+    <div class="reveal-grid">
+      <div class="reveal-card card" string="progress" string-id="rv1" string-offset-top="-20%" string-easing="cubic-bezier(.16,.84,.18,1)">
+        <span class="num">/ 01</span><div><h3>Opacity</h3><p>Fade from invisible to fully present as the timeline advances.</p></div></div>
+      <div class="reveal-card card" string="progress" string-id="rv2" string-offset-top="-10%" string-easing="cubic-bezier(.16,.84,.18,1)">
+        <span class="num">/ 02</span><div><h3>Translate</h3><p>Rise 60px into place, eased along a custom bezier curve.</p></div></div>
+      <div class="reveal-card card" string="progress" string-id="rv3" string-offset-top="0%" string-easing="cubic-bezier(.16,.84,.18,1)">
+        <span class="num">/ 03</span><div><h3>Stagger</h3><p>Different entry offsets create a natural cascade down the row.</p></div></div>
+    </div>
+  </section>
+
+  <!-- ============ 02 PARALLAX ============ -->
+  <section class="wrap" id="parallax">
+    <div class="sec-head"><span class="sec-no">02</span><span class="sec-tag">Parallax</span></div>
+    <h2 class="sec-title">Stacked layers <span class="ac">drift</span> at different speeds.</h2>
+    <p class="sec-desc">StringParallax turns scroll travel into a vertical transform applied directly to each layer. Different strengths build real depth — the module owns the transform, so the scene composes itself.</p>
+    <div class="para-frame">
+      <div class="para-layer para-rings" string="parallax" string-id="px-rings" string-parallax="0.7"><i></i><i></i><i></i><i></i></div>
+      <div class="para-layer para-sun" string="parallax" string-id="px-sun" string-parallax="0.35"></div>
+      <div class="para-layer para-floor" string="parallax" string-id="px-floor" string-parallax="-0.5"></div>
+      <div class="para-label"><h3>Depth<span style="color:var(--lime)">.</span></h3></div>
+    </div>
+  </section>
+
+  <!-- ============ 03 PROGRESS ============ -->
+  <section class="wrap" id="progress">
+    <div class="sec-head"><span class="sec-no">03</span><span class="sec-tag">Progress</span></div>
+    <h2 class="sec-title">A stable <span class="ac">0→1</span> value you can drive anything with.</h2>
+    <p class="sec-desc">StringProgress maps an element's scroll travel to an eased, clamped number exposed as the <span class="mono">--progress</span> variable and a scoped event. Here it spins, scales and fills.</p>
+    <div class="prog-demo">
+      <div class="prog-box" string="progress" string-id="prog" string-offset-top="-30%" string-easing="cubic-bezier(.34,0,.16,1)"></div>
+      <div class="prog-info">
+        <div class="prog-read"><span id="progRead">0</span><span class="pct">%</span></div>
+        <p style="color:var(--muted);margin-top:8px">Scroll progress of the box above.</p>
+        <div class="prog-bar"><i></i></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 04 LERP ============ -->
+  <section class="wrap" id="lerp">
+    <div class="sec-head"><span class="sec-no">04</span><span class="sec-tag">Lerp</span></div>
+    <h2 class="sec-title">Catch the <span class="ac">velocity</span> of the scroll.</h2>
+    <p class="sec-desc">StringLerp exposes the signed scroll-lerp delta as <span class="mono">--lerp</span>. We feed it into a skew and translate so the word physically reacts to how fast you scroll.</p>
+    <div class="lerp-stage" string="lerp" string-id="lerp-stage">
+      <div class="lerp-word"><span class="a">VE</span><span class="b">LOC</span><span class="a">ITY</span></div>
+      <p class="lerp-hint">Scroll up &amp; down quickly → the type leans into the motion.</p>
+    </div>
+  </section>
+
+  <!-- ============ 05 GLIDE ============ -->
+  <section class="wrap" id="glide">
+    <div class="sec-head"><span class="sec-no">05</span><span class="sec-tag">Glide</span></div>
+    <h2 class="sec-title">Turn scroll energy into <span class="ac">drift</span>.</h2>
+    <p class="sec-desc">StringGlide accumulates scroll motion into a per-element pixel transform. Each card carries a different <span class="mono">string-glide</span> multiplier, so they float past at their own pace.</p>
+    <div class="glide-row">
+      <div class="glide-card" string="glide" string-id="gl1" string-glide="0.4"><span>factor 0.4</span><b>Drift</b></div>
+      <div class="glide-card" string="glide" string-id="gl2" string-glide="0.8"><span>factor 0.8</span><b>Float</b></div>
+      <div class="glide-card" string="glide" string-id="gl3" string-glide="1.2"><span>factor 1.2</span><b>Glide</b></div>
+      <div class="glide-card" string="glide" string-id="gl4" string-glide="1.6"><span>factor 1.6</span><b>Soar</b></div>
+    </div>
+  </section>
+
+  <!-- ============ 06 CURSOR ============ -->
+  <section class="wrap" id="cursor">
+    <div class="sec-head"><span class="sec-no">06</span><span class="sec-tag">Cursor</span></div>
+    <h2 class="sec-title">A reactive <span class="ac">pointer</span> with local coordinates.</h2>
+    <p class="sec-desc">Hover these zones. StringCursor writes normalized <span class="mono">--x / --y</span> onto each target and drives the floating portal following your mouse across the whole page.</p>
+    <div class="cursor-demo">
+      <div class="cursor-zone card" string="cursor" string-id="cz1" string-cursor-target="default" string-cursor-class="-view">
+        <div class="pip"></div><h4>Track</h4><p>The dot mirrors your pointer 1:1.</p></div>
+      <div class="cursor-zone card" string="cursor" string-id="cz2" string-cursor-target="default" string-cursor-class="-view">
+        <div class="pip"></div><h4>Push</h4><p>The card itself tilts toward the cursor.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ 07 MAGNETIC ============ -->
+  <section class="wrap" id="magnetic">
+    <div class="sec-head"><span class="sec-no">07</span><span class="sec-tag">Magnetic</span></div>
+    <h2 class="sec-title">Elements <span class="ac">pull</span> toward the pointer.</h2>
+    <p class="sec-desc">StringMagnetic writes <span class="mono">--magnetic-x / -y</span> whenever the pointer enters an active radius. We apply it as a translate — drag your cursor around these controls.</p>
+    <div class="mag-cluster">
+      <a class="mag-btn lime" string="magnetic" string-id="m1" string-radius="200" string-strength="0.6" href="#forms" data-jump>Primary →</a>
+      <a class="mag-btn out" string="magnetic" string-id="m2" string-radius="160" string-strength="0.45" href="#sequence" data-jump>Secondary</a>
+      <a class="mag-btn solid" string="magnetic" string-id="m3" string-radius="140" string-strength="0.5" href="#top" data-jump>Top ↑</a>
+      <div class="mag-orb" string="magnetic" string-id="m4" string-radius="220" string-strength="0.7">GO</div>
+    </div>
+  </section>
+
+  <!-- ============ 08 SPOTLIGHT ============ -->
+  <section class="wrap" id="spotlight">
+    <div class="sec-head"><span class="sec-no">08</span><span class="sec-tag">Spotlight · 3D</span></div>
+    <h2 class="sec-title">A <span class="ac">light</span> that follows the cursor across 3D cards.</h2>
+    <p class="sec-desc">StringSpotlight writes <span class="mono">--spotlight-angle</span> and <span class="mono">--spotlight-distance</span>; combined with cursor tilt, each card becomes a lit, dimensional surface.</p>
+    <div class="spot-grid">
+      <div class="spot-card" string="spotlight|cursor" string-id="sp1" string-lerp="0.12" string-cursor-target="default" string-cursor-class="-view">
+        <div class="ico">◐</div><h3>Lighting</h3><p>A radial highlight tracks the pointer across the surface in real time.</p></div>
+      <div class="spot-card" string="spotlight|cursor" string-id="sp2" string-lerp="0.12" string-cursor-target="default" string-cursor-class="-view">
+        <div class="ico">▣</div><h3>Dimension</h3><p>Perspective tilt on the Y &amp; X axes gives every card real depth.</p></div>
+      <div class="spot-card" string="spotlight|cursor" string-id="sp3" string-lerp="0.12" string-cursor-target="default" string-cursor-class="-view">
+        <div class="ico">✦</div><h3>Composition</h3><p>Two modules, one element — spotlight and cursor share a single object.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ 09 IMPULSE ============ -->
+  <section class="wrap" id="impulse">
+    <div class="sec-head"><span class="sec-no">09</span><span class="sec-tag">Impulse</span></div>
+    <h2 class="sec-title">Cursor velocity becomes a <span class="ac">spring</span>.</h2>
+    <p class="sec-desc">StringImpulse injects pointer velocity into a spring simulation and outputs <span class="mono">--push-x / -y / -rotation</span>. Sweep your cursor across the grid — they shove and settle.</p>
+    <div class="imp-grid">
+      <div class="imp-card" string="impulse" string-id="im1" string-position-strength="2.5" string-rotation-strength="1.4" string-max-offset="70"><span>spring 01</span><b>Shove</b></div>
+      <div class="imp-card" string="impulse" string-id="im2" string-position-strength="3" string-rotation-strength="1.8" string-max-offset="70"><span>spring 02</span><b>Wobble</b></div>
+      <div class="imp-card" string="impulse" string-id="im3" string-position-strength="2" string-rotation-strength="2" string-max-offset="70"><span>spring 03</span><b>Recoil</b></div>
+      <div class="imp-card" string="impulse" string-id="im4" string-position-strength="3.5" string-rotation-strength="1.2" string-max-offset="70"><span>spring 04</span><b>Drift</b></div>
+    </div>
+  </section>
+
+  <!-- ============ 10 SPLIT ============ -->
+  <section class="wrap" id="split">
+    <div class="sec-head"><span class="sec-no">10</span><span class="sec-tag">Split</span></div>
+    <h2 class="sec-title">Text, rebuilt into <span class="ac">lines &amp; characters</span>.</h2>
+    <p class="sec-desc">StringSplit rewrites text into wrapper spans with per-char indices. Scroll here to rebuild it — each character animates independently with a cascading delay.</p>
+    <div class="split-stage" string="progress" string-id="split-trigger" string-offset-top="-20%" style="--progress:0">
+      <h2 class="split-line" string="split" string-split="line[center]|char-line[center]">
+        Every<span class="ac"> letter</span><br>has its own<br>timing.
+      </h2>
+    </div>
+  </section>
+
+  <!-- ============ 11/12/13 FORMS ============ -->
+  <section class="wrap" id="forms">
+    <div class="sec-head"><span class="sec-no">11 · 12 · 13</span><span class="sec-tag">Form validation</span></div>
+    <h2 class="sec-title">Declarative <span class="ac">validation</span> that mirrors state live.</h2>
+    <p class="sec-desc">Three StringForm demos. Rules live in <span class="mono">string-input</span>, helper blocks mirror <span class="mono">-valid / -invalid / -error</span> state, and clean submits fire scoped events.</p>
+
+    <div class="forms-grid">
+      <!-- Form 1: signup -->
+      <form class="fcard" string="form" string-id="signup">
+        <h3>① Sign up</h3>
+        <p class="fdesc">required · min · email rules</p>
+        <div class="field" string-input="group[name]">
+          <label>Name</label>
+          <input name="name" string-input="required|min:2" placeholder="Ada Lovelace" />
+          <div class="errors" string-input="error[name]"></div>
+        </div>
+        <div class="field" string-input="group[email]">
+          <label>Email</label>
+          <input name="email" type="email" string-input="required|email" placeholder="ada@tune.dev" />
+          <div class="errors" string-input="error[email]"></div>
+        </div>
+        <div class="field" string-input="group[pass]">
+          <label>Password</label>
+          <input name="pass" type="password" string-input="required|min:8" placeholder="at least 8 chars" />
+          <div class="errors" string-input="error[pass]"></div>
+        </div>
+        <button type="submit">Create account</button>
+        <div class="form-msg" data-form-msg></div>
+      </form>
+
+      <!-- Form 2: contact -->
+      <form class="fcard" string="form" string-id="contact">
+        <h3>② Contact</h3>
+        <p class="fdesc">live mirror + radio group</p>
+        <div class="field" string-input="group[cname]">
+          <label>Name</label>
+          <input name="cname" string-input="required|min:2" placeholder="Your name" />
+          <div class="errors" string-input="error[cname]"></div>
+        </div>
+        <div class="field" string-input="group[cemail]">
+          <label>Email</label>
+          <input name="cemail" type="email" string-input="required|email" placeholder="you@studio.com" />
+          <div class="errors" string-input="error[cemail]"></div>
+        </div>
+        <div class="field" string-input="group[pref]">
+          <label>Reply via</label>
+          <label class="choice"><input type="radio" name="pref" value="email" string-input="required" /><span>Email</span></label>
+          <label class="choice"><input type="radio" name="pref" value="call" string-input="required" /><span>Call</span></label>
+          <div class="errors" string-input="error[pref]"></div>
+        </div>
+        <div class="field" string-input="group[msg]">
+          <label>Message</label>
+          <textarea name="msg" string-input="required|min:10" placeholder="Tell us about the project…"></textarea>
+          <div class="errors" string-input="error[msg]"></div>
+        </div>
+        <button type="submit">Send message</button>
+        <div class="form-msg" data-form-msg></div>
+      </form>
+
+      <!-- Form 3: secure (pattern + same) -->
+      <form class="fcard" string="form" string-id="secure">
+        <h3>③ Secure</h3>
+        <p class="fdesc">pattern · same · match rules</p>
+        <div class="field" string-input="group[handle]">
+          <label>Username</label>
+          <input name="handle" string-input="required|pattern(^[a-z0-9-]+$)|min:3" placeholder="lowercase, digits, dash" />
+          <div class="errors" string-input="error[handle]"></div>
+        </div>
+        <div class="field" string-input="group[spass]">
+          <label>Password</label>
+          <input name="spass" type="password" string-input="required|min:8" placeholder="create a password" />
+          <div class="errors" string-input="error[spass]"></div>
+        </div>
+        <div class="field" string-input="group[confirm]">
+          <label>Confirm</label>
+          <input name="confirm" type="password" string-input="required|same:spass" placeholder="repeat password" />
+          <div class="errors" string-input="error[confirm]"></div>
+        </div>
+        <div class="field" string-input="group[code]">
+          <label>Access code</label>
+          <input name="code" string-input="required|digits|min:4" placeholder="numbers only" />
+          <div class="errors" string-input="error[code]"></div>
+        </div>
+        <button type="submit">Lock it in</button>
+        <div class="form-msg" data-form-msg></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ 16 SEQUENCE ============ -->
+  <section class="wrap" id="sequence">
+    <div class="sec-head"><span class="sec-no">16</span><span class="sec-tag">Sequence</span></div>
+    <h2 class="sec-title">A scroll-driven <span class="ac">frame sequence</span>.</h2>
+    <p class="sec-desc">StringSequence orchestrates stepped output tied to scroll. We drive a 00–99 frame counter and a row of timeline steps from the progress channel — every step lights in order as you descend.</p>
+    <div class="seq-frame" string="progress" string-id="seq" string-offset-top="-40%" string-easing="cubic-bezier(.5,0,.5,1)">
+      <div class="seq-top"><b>SEQUENCE / FRAME</b><b id="seqPct">0%</b></div>
+      <div class="seq-num" id="seqNum">00</div>
+      <div class="seq-bars">
+        <div class="seq-step">01</div><div class="seq-step">02</div><div class="seq-step">03</div>
+        <div class="seq-step">04</div><div class="seq-step">05</div><div class="seq-step">06</div>
+        <div class="seq-step">07</div><div class="seq-step">08</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ANIME.JS SHOWCASE ============ -->
+  <section class="wrap" id="animejs">
+    <div class="sec-head"><span class="sec-no">+20</span><span class="sec-tag">anime.js × StringTune</span></div>
+    <h2 class="sec-title">Scripted motion, <span class="ac">timelines</span> &amp; springs.</h2>
+    <p class="sec-desc">Where StringTune reacts to scroll &amp; cursor, anime.js v4 handles <em>choreographed</em> motion — timelines, SVG line-drawing &amp; morphing, motion paths, springs, staggers, counters, colour tweens, ambient loops, draggables, easing races, timers, text splitting, animatables, WAAPI, scroll observers &amp; global engine control.</p>
+
+    <!-- [3] SVG draw-on & [8] LOOP orbits -->
+    <div class="aj-svg-wrap">
+      <div class="aj-svg-card" id="ajSvgCard">
+        <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path class="aj-svg-path" id="ajPath" d="M20,150 C60,150 60,60 100,60 C140,60 140,150 180,150 C220,150 220,60 260,60 C300,60 300,150 340,150 L380,150" />
+          <circle class="aj-svg-path" id="ajCircle" cx="200" cy="100" r="0" fill="rgba(200,255,46,0.06)" />
+        </svg>
+        <h4>③ SVG draw-on + morph</h4>
+        <p><span class="mono">strokeDashoffset</span> line-draw and a circle radius keyframe morph — replay on click.</p>
+      </div>
+      <div class="aj-svg-card" id="ajOrbitCard" style="min-height:280px">
+        <div style="position:relative;height:220px">
+          <div class="aj-orbit" id="ajOrb1"></div>
+          <div class="aj-orbit -v" id="ajOrb2"></div>
+          <div class="aj-orbit -c" id="ajOrb3"></div>
+          <div class="aj-orbit" id="ajOrb4" style="width:10px;height:10px;margin:-5px 0 0 -5px"></div>
+          <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:120px;height:120px;border-radius:50%;border:1px solid var(--line-2)"></div>
+          <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:220px;height:220px;border-radius:50%;border:1px solid var(--line);opacity:.5"></div>
+        </div>
+        <h4>⑧ Ambient loops</h4>
+        <p>Three orbits running forever at different radii, speeds &amp; easings — pure anime.js.</p>
+      </div>
+    </div>
+
+    <!-- [4] SPRING cards -->
+    <div style="margin-top:60px">
+      <h3 style="font-family:'Space Grotesk';font-size:22px">④ Spring entrances</h3>
+      <p style="color:var(--muted);font-size:13px;margin-top:6px">Click to replay — each card enters on a spring with mass/stiffness/damping.</p>
+      <div class="aj-spring-row" id="ajSpringRow">
+        <div class="aj-spring-card"><b>k=80</b><span>bouncy</span></div>
+        <div class="aj-spring-card"><b>k=140</b><span>balanced</span></div>
+        <div class="aj-spring-card"><b>k=200</b><span>snappy</span></div>
+        <div class="aj-spring-card"><b>k=260</b><span>tight</span></div>
+      </div>
+    </div>
+
+    <!-- [5] STAGGER grid -->
+    <div class="aj-stg-frame" style="margin-top:40px">
+      <h3 style="font-family:'Space Grotesk';font-size:22px">⑤ Grid staggers</h3>
+      <p style="color:var(--muted);font-size:13px;margin-top:6px;margin-bottom:18px">Same animation — different <span class="mono">from</span> origin. Click to swap.</p>
+      <div class="aj-stg-controls" id="ajStgControls">
+        <button class="aj-stg-btn -on" data-from="center">from center</button>
+        <button class="aj-stg-btn" data-from="first">from first</button>
+        <button class="aj-stg-btn" data-from="last">from last</button>
+        <button class="aj-stg-btn" data-from="random">from random</button>
+      </div>
+      <div class="aj-stg-grid" id="ajStgGrid"></div>
+    </div>
+
+    <!-- [7] COLOR tween -->
+    <div class="aj-color-row">
+      <div class="aj-color-orb" id="ajColorOrb"></div>
+      <div class="aj-color-info">
+        <h4>⑦ Colour &amp; unit tweening</h4>
+        <p>Smooth hex ↔ hex ↔ hex transitions with matching relative-unit motion. Runs forever.</p>
+        <div class="aj-color-hex" id="ajColorHex">#C8FF2E</div>
+      </div>
+    </div>
+
+    <!-- [9] DRAGGABLE -->
+    <div style="margin-top:60px">
+      <h3 style="font-family:'Space Grotesk';font-size:22px">⑨ Draggable with momentum</h3>
+      <p style="color:var(--muted);font-size:13px;margin-top:6px">Drag any chip — they stay inside the frame, glide with velocity and settle on a spring.</p>
+      <div class="aj-drag-frame" id="ajDragFrame">
+        <span class="aj-drag-hint">↔ drag me</span>
+        <div class="aj-drag-chip" data-drag>Chip A</div>
+        <div class="aj-drag-chip -v" data-drag>Chip B</div>
+        <div class="aj-drag-chip -c" data-drag>Chip C</div>
+      </div>
+    </div>
+
+    <!-- [11] SCRUBBABLE -->
+    <div class="aj-scrub-frame">
+      <h3 style="font-family:'Space Grotesk';font-size:22px">⑪ Scrubbable timeline</h3>
+      <p style="color:var(--muted);font-size:13px;margin-top:6px;margin-bottom:18px">Drive one timeline manually with a slider — same anime.js instance, different progress source.</p>
+      <div class="aj-scrub-stage">
+        <div class="aj-scrub-box" id="ajScrubA">A</div>
+        <div class="aj-scrub-box" id="ajScrubB" style="background:var(--violet);color:#fff">B</div>
+        <div class="aj-scrub-box" id="ajScrubC" style="background:var(--cyan)">C</div>
+      </div>
+      <div class="aj-scrub-controls">
+        <button class="aj-scrub-btn" id="ajScrubPlay">▶ Play</button>
+        <button class="aj-scrub-btn" id="ajScrubReverse">◀ Reverse</button>
+        <input class="aj-scrub-slider" type="range" min="0" max="1000" value="0" id="ajScrubSlider" />
+        <span class="aj-scrub-pct" id="ajScrubPct">0%</span>
+      </div>
+    </div>
+
+    <!-- [12] EASES gallery -->
+    <div class="aj-ease-frame" id="ajEaseFrame">
+      <h3 style="font-family:'Space Grotesk';font-size:22px">⑫ Easing gallery</h3>
+      <p style="color:var(--muted);font-size:13px;margin-top:6px">Every built-in easing family raced side by side — linear, sine, quad, expo, back, elastic, bounce, steps and a custom cubic-bezier. Click the frame to restart the race.</p>
+      <div class="aj-ease-rows" id="ajEaseRows"></div>
+    </div>
+
+    <!-- [13] MOTION PATH + SHAPE MORPH -->
+    <div class="aj-grid-2">
+      <div class="aj-svg-card" id="ajMotionCard">
+        <div class="aj-path-stage" style="max-width:420px;margin:0 auto">
+          <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="width:100%;max-width:none">
+            <path class="aj-svg-path" id="ajMotionPath" style="stroke:rgba(255,255,255,.28);stroke-dasharray:4 8"
+              d="M30,160 C90,20 150,20 200,100 C250,180 310,180 370,40" />
+          </svg>
+          <div class="aj-ship" id="ajShip">➤</div>
+        </div>
+        <h4>⑬ Motion path</h4>
+        <p><span class="mono">svg.createMotionPath</span> — translateX / translateY / rotate extracted straight from the path geometry.</p>
+      </div>
+      <div class="aj-svg-card" id="ajMorphCard">
+        <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <polygon class="aj-svg-path" id="ajMorphPoly" style="fill:rgba(138,107,255,.12);stroke:var(--violet)"
+            points="200,30 240,90 310,100 255,145 270,175 200,150 130,175 145,145 90,100 160,90" />
+          <polygon id="ajMorphTarget" style="display:none"
+            points="200,20 231,80 300,80 246,124 270,190 200,150 130,190 154,124 100,80 169,80" />
+        </svg>
+        <h4>⑭ Shape morph</h4>
+        <p><span class="mono">svg.morphTo</span> — one polygon breathing into another, looped with alternating direction.</p>
+      </div>
+    </div>
+
+    <!-- [15] TIMER + [16] TEXT SPLIT -->
+    <div class="aj-grid-2">
+      <div class="aj-svg-card">
+        <h4 style="margin-top:0">⑮ createTimer</h4>
+        <p style="margin:6px 0 22px">An animation with no targets — a pure clock ticking on the anime.js engine, driving this readout every frame.</p>
+        <div class="aj-timer-read" id="ajTimerRead">00:00.00</div>
+        <div class="aj-timer-btns">
+          <button class="aj-scrub-btn" id="ajTimerToggle">⏸ Pause</button>
+          <button class="aj-scrub-btn" id="ajTimerRestart">↺ Restart</button>
+        </div>
+      </div>
+      <div class="aj-svg-card" id="ajTextCard">
+        <h4 style="margin-top:0">⑯ Text splitter</h4>
+        <p style="margin:6px 0 22px">The headline is split into characters and scrambled back in from random offsets — click to replay.</p>
+        <div class="aj-textsplit" id="ajTextTarget">MOTION IS MEANING</div>
+      </div>
+    </div>
+
+    <!-- [17] ANIMATABLE + [18] WAAPI -->
+    <div class="aj-grid-2">
+      <div class="aj-svg-card" style="padding:22px 22px 30px">
+        <div class="aj-anim-zone" id="ajAnimZone">
+          <div class="aj-anim-orb" id="ajAnimOrb"></div>
+        </div>
+        <h4 style="margin-top:20px">⑰ createAnimatable</h4>
+        <p>Move your pointer inside the zone — x &amp; y are animatable properties re-tweened toward the cursor on every move.</p>
+      </div>
+      <div class="aj-svg-card" id="ajWaapiCard">
+        <div class="aj-waapi-row">
+          <div class="aj-waapi-box"></div>
+          <div class="aj-waapi-box" style="background:linear-gradient(135deg,var(--violet),#ff5a8a)"></div>
+          <div class="aj-waapi-box" style="background:linear-gradient(135deg,var(--cyan),var(--violet))"></div>
+        </div>
+        <h4>⑱ WAAPI mode</h4>
+        <p><span class="mono">waapi.animate</span> — the same syntax compiled to hardware-accelerated Web Animations. Click to run.</p>
+      </div>
+    </div>
+
+    <!-- [19] SCROLL OBSERVER -->
+    <div class="aj-sync-frame">
+      <h3 style="font-family:'Space Grotesk';font-size:22px">⑲ onScroll — scroll-synced animation</h3>
+      <p style="color:var(--muted);font-size:13px;margin-top:6px">This comet's position is bound directly to scroll through anime.js' own ScrollObserver — progress maps 1:1 to this section's travel through the viewport.</p>
+      <div class="aj-sync-track">
+        <div class="aj-sync-comet" id="ajSyncComet">☄</div>
+      </div>
+    </div>
+
+    <!-- [20] ENGINE playback rate -->
+    <div class="aj-scrub-frame">
+      <h3 style="font-family:'Space Grotesk';font-size:22px">⑳ Engine speed</h3>
+      <p style="color:var(--muted);font-size:13px;margin-top:6px;margin-bottom:18px">One global clock drives every animation above. <span class="mono">engine.playbackRate</span> retimes the whole page — try 0.25× and watch everything move through honey.</p>
+      <div class="aj-scrub-controls" id="ajRateBtns">
+        <button class="aj-scrub-btn" data-rate="0.25">0.25×</button>
+        <button class="aj-scrub-btn" data-rate="0.5">0.5×</button>
+        <button class="aj-scrub-btn -on" data-rate="1">1×</button>
+        <button class="aj-scrub-btn" data-rate="2">2×</button>
+        <button class="aj-scrub-btn" data-rate="4">4×</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 14 / 15 DIAGNOSTICS ============ -->
+  <section class="wrap" id="diagnostics">
+    <div class="sec-head"><span class="sec-no">14 · 15</span><span class="sec-tag">Diagnostics</span></div>
+    <h2 class="sec-title">Live <span class="ac">FPS</span> &amp; <span class="ac">position</span> telemetry.</h2>
+    <p class="sec-desc">StringFPSTracker and StringPositionTracker are global modules that broadcast through attributes and events. The panels in the corners of your screen are the live feed — these are the same numbers.</p>
+    <div class="diag">
+      <div class="diag-card">
+        <h3>14 — FPS Tracker</h3>
+        <p>Counts rendered frames each second and writes <span class="mono">data-fps</span> across the document.</p>
+        <div class="fps-val" data-fps>—</div>
+      </div>
+      <div class="diag-card">
+        <h3>15 — Position Tracker</h3>
+        <p>Broadcasts scroll pixels, percentage and direction via <span class="mono">data-val</span>, <span class="mono">data-val-pct</span>, <span class="mono">data-dir</span>.</p>
+        <div class="diag-read">
+          <div class="diag-row"><span>Pixels</span><b data-val>0</b></div>
+          <div class="diag-row"><span>Progress</span><b data-val-pct>0</b></div>
+          <div class="diag-row"><span>Direction</span><b data-dir>•</b></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- footer -->
+  <footer class="wrap">
+    <div class="foot-top">
+      <h2>Build motion <span style="color:var(--lime)">without</span> the boilerplate.</h2>
+      <div class="foot-cols">
+        <div><h5>Modules</h5><a href="#reveal" data-jump>Reveal</a><a href="#parallax" data-jump>Parallax</a><a href="#spotlight" data-jump>Spotlight</a><a href="#impulse" data-jump>Impulse</a></div>
+        <div><h5>System</h5><a href="#forms" data-jump>Forms</a><a href="#sequence" data-jump>Sequence</a><a href="#diagnostics" data-jump>Diagnostics</a></div>
+        <div><h5>Links</h5><a href="https://string-tune.fiddle.digital" target="_blank" rel="noopener">Homepage</a><a href="https://tune.fiddle.digital" target="_blank" rel="noopener">Docs</a><a href="https://www.npmjs.com/package/@fiddle-digital/string-tune" target="_blank" rel="noopener">npm</a></div>
+      </div>
+    </div>
+    <div class="foot-bot">
+      <span>© 2026 — demo landing built with StringTune by fiddle.digital</span>
+      <span>HTML · CSS · JS — no framework</span>
+    </div>
+  </footer>
+
+</main>
+
+<!-- live HUDs (StringFPSTracker / StringPositionTracker write these attributes) -->
+<aside class="hud hud-pos">
+  <div class="hud-h"><span class="led"></span>Position · 15</div>
+  <div class="r"><span>px</span><b data-val>0</b></div>
+  <div class="r"><span>%</span><b data-val-pct>0</b></div>
+  <div class="r"><span>dir</span><b data-dir>•</b></div>
+</aside>
+<aside class="hud hud-fps">
+  <div class="hud-h"><span class="led"></span>FPS · 14</div>
+  <div class="fpsval" data-fps>—</div>
+</aside>
+
+<script>
+(function () {
+  function $(s, c) { return (c || document).querySelector(s); }
+  function $all(s, c) { return Array.prototype.slice.call((c || document).querySelectorAll(s)); }
+
+  // ---- DEFENSIVE: guarantee the loader/veil never trap the page ----
+  // If anything below throws or a CDN fails, this dismisses the overlays so
+  // the page is always usable.
+  var _overlaysDismissed = false;
+  function dismissOverlays() {
+    if (_overlaysDismissed) return;
+    _overlaysDismissed = true;
+    var l = $('#ajLoader'), v = $('#ajVeil');
+    if (l) { l.style.transition = 'opacity .4s'; l.style.opacity = '0'; l.style.pointerEvents = 'none';
+      setTimeout(function () { l.style.display = 'none'; }, 450); }
+    if (v) { v.style.transition = 'transform .6s'; v.style.transform = 'scaleY(0)'; v.style.pointerEvents = 'none'; }
+  }
+  // hard safety net: no matter what, overlays are gone within 4s
+  setTimeout(dismissOverlays, 4000);
+
+  function init() {
+    var lib = window.StringTune;
+    if (!lib || !lib.StringTune) {
+      document.documentElement.classList.add('no-st');
+      // still run the anime.js layer (loader, showcase) if it's present
+      initAnime();
+      return;
+    }
+
+    var ST = lib;
+    var st = ST.StringTune.getInstance();
+
+    try {
+      // desktop already defaults to smooth (so Parallax/Lerp/Glide run); mobile stays default.
+      if ('scrollMobileMode' in st) st.scrollMobileMode = 'default';
+
+      st.use(ST.StringProgress);
+      st.use(ST.StringParallax);
+      st.use(ST.StringLerp);
+      st.use(ST.StringGlide);
+      st.use(ST.StringCursor, { lerp: 0.8 });
+      st.use(ST.StringMagnetic);
+      st.use(ST.StringSpotlight);
+      st.use(ST.StringImpulse);
+      st.use(ST.StringSplit);
+      st.use(ST.StringForm);
+      st.use(ST.StringFPSTracker);
+      st.use(ST.StringPositionTracker);
+      try { st.use(ST.StringSequence); } catch (e) {}
+
+      st.start(60);
+    } catch (err) {
+      document.documentElement.classList.add('no-st');
+      if (window.console) console.warn('StringTune init issue:', err);
+      initAnime();
+      return;
+    }
+
+    // --- nav progress bar + diagnostics driven by the Position tracker channel ---
+    var navBar = $('#navBar');
+    st.on('scroll-position', function (d) {
+      var p = (d && typeof d.valPct === 'number') ? d.valPct / 100 : 0;
+      if (navBar) navBar.style.transform = 'scaleX(' + p + ')';
+    });
+
+    // --- Progress readout (section 03) ---
+    var progRead = $('#progRead');
+    st.on('object:progress:prog', function (v) {
+      if (progRead) progRead.textContent = Math.round((v || 0) * 100);
+    });
+
+    // --- Sequence (section 16): frame counter + steps from progress channel ---
+    var seqNum = $('#seqNum'), seqPct = $('#seqPct'), seqSteps = $all('.seq-step');
+    st.on('object:progress:seq', function (v) {
+      v = v || 0;
+      if (seqNum) seqNum.textContent = String(Math.round(v * 99)).padStart(2, '0');
+      if (seqPct) seqPct.textContent = Math.round(v * 100) + '%';
+      for (var i = 0; i < seqSteps.length; i++) {
+        seqSteps[i].classList.toggle('on', v >= (i + 1) / seqSteps.length);
+      }
+    });
+
+    // --- Form feedback (sections 11/12/13) ---
+    ['signup', 'contact', 'secure'].forEach(function (id) {
+      var form = $('form[string-id="' + id + '"]');
+      var msg = form ? form.querySelector('[data-form-msg]') : null;
+      if (!form || !msg) return;
+      st.on('form:submit:' + id, function (data) {
+        msg.className = 'form-msg ok';
+        msg.textContent = '✓ Valid — ' + Object.keys(data || {}).length + ' fields received.';
+      });
+      st.on('form:invalid:' + id, function () {
+        msg.className = 'form-msg bad';
+        msg.textContent = 'Please fix the highlighted fields above.';
+      });
+      form.addEventListener('submit', function (e) { e.preventDefault(); });
+    });
+
+    // --- smooth anchor navigation ---
+    $all('[data-jump]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        var href = a.getAttribute('href');
+        if (!href || href.charAt(0) !== '#') return;
+        e.preventDefault();
+        var target = href === '#top' ? document.body : $(href);
+        if (!target) return;
+        try {
+          if (st.scrollTo) { st.scrollTo(href === '#top' ? { position: 0 } : href); return; }
+        } catch (e2) {}
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+
+    // safety: if for any reason content is stuck hidden, reveal after load
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        if (!document.querySelector('.-s-char') && $('.hero-title')) {
+          document.documentElement.classList.add('no-st');
+        }
+      }, 1200);
+    });
+
+    // hand off to the anime.js layer, passing the live StringTune instance
+    initAnime(st);
+  }
+
+  // ================================================================
+  // ============  ANIME.JS v4 — all 20 integrations ================
+  // ================================================================
+  function initAnime(st) {
+    var A = window.anime;
+    if (!A) {
+      // graceful fallback: hide loader/veil so page is usable
+      dismissOverlays();
+      $all('.hero-meta b[data-count]').forEach(function (b) {
+        b.textContent = b.getAttribute('data-count') + (b.getAttribute('data-suffix') || '');
+      });
+      var badge0 = $('#ajBadge'); if (badge0) badge0.style.opacity = 1;
+      $all('.aj-spring-card').forEach(function (c) { c.style.opacity = 1; c.style.transform = 'none'; });
+      return;
+    }
+    var animate = A.animate, createTimeline = A.createTimeline, stagger = A.stagger,
+        createSpring = A.createSpring, createDraggable = A.createDraggable,
+        utils = A.utils, svg = A.svg;
+
+    // ---- [1] TIMELINE — loader choreography ----
+    var loader = $('#ajLoader'), veil = $('#ajVeil');
+    (function () {
+      if (!loader) { dismissOverlays(); return; }
+      try {
+        var tl = createTimeline({ defaults: { ease: 'outExpo', duration: 700 } });
+        tl.add('#ajLoaderBrand', { opacity: [0, 1], translateY: [12, 0] }, 100)
+          .add('#ajLoaderBar', { opacity: [0, 1] }, '-=400')
+          .add('#ajLoaderPct', { opacity: [0, 1] }, '<')
+          .add('#ajLoaderBar i', {
+            width: ['0%', '100%'], duration: 1400, ease: 'inOutQuart',
+            onUpdate: function (a) {
+              var p = Math.round((a.progress || 0) * 100);
+              var el = $('#ajLoaderPct'); if (el) el.textContent = p + '%';
+            }
+          })
+          .add('#ajLoader', { opacity: [1, 0], duration: 500, ease: 'outQuad',
+            onComplete: function () { _overlaysDismissed = true; loader.classList.add('-gone'); loader.style.display = 'none'; }
+          })
+          .add(veil, { scaleY: [1, 0], duration: 900, ease: 'inOutExpo' }, '-=300')
+          .add('#ajBadge', { opacity: [0, 1], translateY: [10, 0], duration: 600 }, '-=500');
+      } catch (e) { dismissOverlays(); }
+
+      // [6] number counters — animate a proxy object per stat, write to textContent
+      setTimeout(function () {
+        $all('.hero-meta b[data-count]').forEach(function (el, i) {
+          var to = parseFloat(el.getAttribute('data-count')) || 0;
+          var suf = el.getAttribute('data-suffix') || '';
+          var proxy = { n: 0 };
+          animate(proxy, {
+            n: to, duration: 1600, ease: 'outExpo', delay: i * 100,
+            onUpdate: function () { el.textContent = Math.round(proxy.n) + suf; }
+          });
+        });
+      }, 1800);
+    })();
+
+    // ---- [2] KEYFRAMES — badge pulse (on click) ----
+    var badge = $('#ajBadge');
+    if (badge) {
+      badge.addEventListener('click', function () {
+        animate(badge, {
+          keyframes: [
+            { scale: 1.15, backgroundColor: 'rgba(200,255,46,0.25)' },
+            { scale: .95, rotate: -3 },
+            { scale: 1.08, rotate: 2 },
+            { scale: 1, rotate: 0, backgroundColor: 'rgba(200,255,46,0.08)' }
+          ],
+          duration: 900, ease: 'outElastic(1,.5)'
+        });
+      });
+    }
+
+    // ---- [3] SVG draw-on + morph (replay on click) ----
+    var svgCard = $('#ajSvgCard'), pathEl = $('#ajPath'), circleEl = $('#ajCircle');
+    function playSvg() {
+      if (!pathEl) return;
+      var len = pathEl.getTotalLength ? pathEl.getTotalLength() : 800;
+      pathEl.style.strokeDasharray = len;
+      pathEl.style.strokeDashoffset = len;
+      var tl = createTimeline();
+      tl.add(pathEl, { strokeDashoffset: [len, 0], duration: 1500, ease: 'inOutSine' })
+        .add(circleEl, {
+          keyframes: [
+            { r: 40, opacity: [.3, .8] },
+            { r: 70, opacity: .4 },
+            { r: 55, opacity: .6 }
+          ],
+          duration: 900, ease: 'outExpo'
+        }, '-=800');
+    }
+    if (svgCard) { svgCard.addEventListener('click', playSvg); setTimeout(playSvg, 2200); }
+
+    // ---- [4] SPRING entrances (replay on click) ----
+    var springRow = $('#ajSpringRow');
+    function playSprings() {
+      if (!springRow) return;
+      var cards = $all('.aj-spring-card', springRow);
+      utils.set(cards, { opacity: 0, translateY: 60, scale: .8 });
+      var springs = [80, 140, 200, 260];
+      cards.forEach(function (c, i) {
+        animate(c, {
+          opacity: [0, 1], translateY: [60, 0], scale: [.8, 1],
+          ease: createSpring({ stiffness: springs[i], damping: 12, mass: 1 }),
+          delay: i * 90
+        });
+      });
+    }
+    if (springRow) { springRow.addEventListener('click', playSprings); setTimeout(playSprings, 2500); }
+
+    // ---- [5] STAGGER grid ----
+    var stgGrid = $('#ajStgGrid');
+    if (stgGrid) {
+      var cells = 14 * 5;
+      for (var i = 0; i < cells; i++) {
+        var d = document.createElement('div');
+        d.className = 'aj-stg-cell';
+        stgGrid.appendChild(d);
+      }
+      var stgCells = $all('.aj-stg-cell', stgGrid);
+      var playStagger = function (from) {
+        animate(stgCells, {
+          scale: [
+            { from: 1, to: .2 },
+            { to: 1 }
+          ],
+          backgroundColor: [
+            { to: 'rgba(200,255,46,.9)' },
+            { to: 'rgba(255,255,255,.06)' }
+          ],
+          delay: stagger(35, { from: from, grid: [14, 5] }),
+          duration: 500, ease: 'outQuad'
+        });
+      };
+      $all('.aj-stg-btn', $('#ajStgControls')).forEach(function (b) {
+        b.addEventListener('click', function () {
+          $all('.aj-stg-btn').forEach(function (x) { x.classList.remove('-on'); });
+          b.classList.add('-on');
+          var f = b.getAttribute('data-from');
+          playStagger(f === 'first' ? 0 : f === 'last' ? stgCells.length - 1 : f);
+        });
+      });
+      // ambient replay
+      setInterval(function () { playStagger('center'); }, 3800);
+      setTimeout(function () { playStagger('center'); }, 3000);
+    }
+
+    // ---- [6] COUNTERS — handled inside the loader timeline above ----
+
+    // ---- [7] COLOR & unit tweening ----
+    var colorOrb = $('#ajColorOrb'), colorHex = $('#ajColorHex');
+    if (colorOrb) {
+      var palette = ['#c8ff2e', '#8a6bff', '#37e6ff', '#ff5a8a', '#ffb547', '#c8ff2e'];
+      var idx = 0;
+      var nextColor = function () {
+        idx = (idx + 1) % palette.length;
+        var to = palette[idx];
+        animate(colorOrb, {
+          backgroundColor: to,
+          boxShadow: ['0 0 60px ' + to + '66', '0 0 80px ' + to + '99', '0 0 60px ' + to + '66'],
+          translateX: '+=' + (Math.random() * 40 - 20),
+          translateY: '+=' + (Math.random() * 40 - 20),
+          scale: [1, 1.08, 1],
+          duration: 1200, ease: 'inOutQuad',
+          onComplete: function () {
+            if (colorHex) colorHex.textContent = to.toUpperCase();
+          }
+        });
+      };
+      if (colorHex) colorHex.textContent = palette[0].toUpperCase();
+      setInterval(nextColor, 1400);
+    }
+
+    // ---- [8] LOOP — ambient orbits ----
+    function orbit(sel, radius, dur, dir) {
+      var el = $(sel); if (!el) return;
+      animate(el, {
+        keyframes: (function () {
+          var frames = [], steps = 60;
+          for (var i = 0; i <= steps; i++) {
+            var a = (i / steps) * Math.PI * 2 * (dir || 1);
+            frames.push({ translateX: Math.cos(a) * radius, translateY: Math.sin(a) * radius });
+          }
+          return frames;
+        })(),
+        duration: dur, ease: 'linear', loop: true
+      });
+    }
+    orbit('#ajOrb1', 60, 4000, 1);
+    orbit('#ajOrb2', 100, 6500, -1);
+    orbit('#ajOrb3', 80, 5200, 1);
+    orbit('#ajOrb4', 40, 3200, -1);
+
+    // ---- [9] DRAGGABLE with momentum ----
+    if (createDraggable) {
+      $all('[data-drag]').forEach(function (chip) {
+        try {
+          createDraggable(chip, {
+            container: '#ajDragFrame',
+            releaseEase: createSpring({ stiffness: 120, damping: 14 }),
+            onGrab: function () { chip.classList.add('-dragging'); },
+            onRelease: function () { chip.classList.remove('-dragging'); }
+          });
+        } catch (e) {
+          // fallback: simple pointer drag
+          var sx, sy, ox = 0, oy = 0, dragging = false;
+          chip.addEventListener('pointerdown', function (e) {
+            dragging = true; sx = e.clientX; sy = e.clientY;
+            var m = chip.style.transform.match(/translate3d\(([-\d.]+)px,\s*([-\d.]+)px/);
+            if (m) { ox = parseFloat(m[1]); oy = parseFloat(m[2]); }
+            chip.setPointerCapture(e.pointerId);
+            chip.classList.add('-dragging');
+          });
+          chip.addEventListener('pointermove', function (e) {
+            if (!dragging) return;
+            chip.style.transform = 'translate3d(' + (ox + e.clientX - sx) + 'px,' + (oy + e.clientY - sy) + 'px,0)';
+          });
+          chip.addEventListener('pointerup', function () { dragging = false; chip.classList.remove('-dragging'); });
+        }
+      });
+    }
+
+    // ---- [10] PROMISE-based — form success celebration ----
+    function celebrate(form) {
+      if (!form) return;
+      var count = 24;
+      var pieces = [];
+      for (var i = 0; i < count; i++) {
+        var p = document.createElement('div');
+        p.className = 'aj-confetti';
+        p.style.background = ['#c8ff2e', '#8a6bff', '#37e6ff', '#ffb547'][i % 4];
+        form.appendChild(p);
+        pieces.push(p);
+      }
+      animate(pieces, {
+        translateX: function () { return (Math.random() - .5) * 360; },
+        translateY: function () { return (Math.random() - .5) * 320; },
+        rotate: function () { return (Math.random() - .5) * 720; },
+        scale: [{ from: 0, to: 1 }, { to: 0 }],
+        opacity: [{ from: 1, to: 0 }],
+        duration: 1400,
+        ease: 'outExpo',
+        delay: stagger(20),
+        onComplete: function () { pieces.forEach(function (p) { p.remove(); }); }
+      });
+    }
+    if (st) {
+      ['signup', 'contact', 'secure'].forEach(function (id) {
+        st.on('form:submit:' + id, function () {
+          var form = $('form[string-id="' + id + '"]');
+          celebrate(form);
+        });
+        st.on('form:invalid:' + id, function () {
+          var form = $('form[string-id="' + id + '"]');
+          if (form) animate(form, {
+            translateX: [0, -8, 8, -6, 6, -3, 3, 0], duration: 500, ease: 'outQuad'
+          });
+        });
+      });
+    }
+
+    // ---- [11] SCRUBBABLE timeline ----
+    var scrubA = $('#ajScrubA'), scrubB = $('#ajScrubB'), scrubC = $('#ajScrubC');
+    var scrubSlider = $('#ajScrubSlider'), scrubPct = $('#ajScrubPct');
+    var scrubPlay = $('#ajScrubPlay'), scrubReverse = $('#ajScrubReverse');
+    var scrubTl = null;
+    if (scrubA && scrubSlider) {
+      scrubTl = createTimeline({
+        autoplay: false,
+        defaults: { duration: 800, ease: 'inOutQuad' },
+        onUpdate: function (t) {
+          var p = t.progress || 0;
+          scrubSlider.value = Math.round(p * 1000);
+          if (scrubPct) scrubPct.textContent = Math.round(p * 100) + '%';
+        }
+      });
+      scrubTl.add(scrubA, { translateY: -60, rotate: 180 })
+             .add(scrubB, { translateY: -100, scale: 1.3 }, '-=400')
+             .add(scrubC, { translateY: -60, rotate: -180 }, '-=600')
+             .add([scrubA, scrubB, scrubC], { translateX: function (el, i) { return (i - 1) * 40; } }, '-=200')
+             .add([scrubA, scrubB, scrubC], { translateY: 0, translateX: 0, rotate: 0, scale: 1 });
+
+      scrubSlider.addEventListener('input', function () {
+        var p = parseFloat(scrubSlider.value) / 1000;
+        scrubTl.pause();
+        scrubTl.seek(scrubTl.duration * p);
+        if (scrubPct) scrubPct.textContent = Math.round(p * 100) + '%';
+      });
+      if (scrubPlay) scrubPlay.addEventListener('click', function () {
+        if (scrubTl.progress >= .99) scrubTl.seek(0);
+        scrubTl.play();
+      });
+      if (scrubReverse) scrubReverse.addEventListener('click', function () {
+        scrubTl.reverse(); scrubTl.play();
+      });
+    }
+
+    // ---- [12] EASES gallery — every easing family raced ----
+    (function () {
+      var frame = $('#ajEaseFrame'), rows = $('#ajEaseRows');
+      if (!frame || !rows) return;
+      var eases = [        ['linear', 'linear'],
+        ['inOutSine', 'inOutSine'],
+        ['outQuad', 'outQuad'],
+        ['outCubic', 'outCubic'],
+        ['outExpo', 'outExpo'],
+        ['outBack', 'outBack'],
+        ['outElastic(1,.5)', 'outElastic(1,.5)'],
+        ['outBounce', 'outBounce'],
+        ['steps(8)', 'steps(8)'],
+        ['cubicBezier(.3,-.4,.1,1.4)', 'cubicBezier(.3,-.4,.1,1.4)']
+      ];
+      eases.forEach(function (e) {
+        var row = document.createElement('div');
+        row.className = 'aj-ease-row';
+        row.innerHTML = '<span class="lbl">' + e[0] + '</span><div class="aj-ease-track"><div class="aj-ease-dot"></div></div>';
+        rows.appendChild(row);
+      });
+      var dots = $all('.aj-ease-dot', rows);
+      function race() {
+        dots.forEach(function (dot, i) {
+          var track = dot.parentNode;
+          var dist = Math.max(0, track.clientWidth - 30);
+          utils.set(dot, { translateX: 0 });
+          animate(dot, { translateX: dist, duration: 1800, delay: 200, ease: eases[i][1] });
+        });
+      }
+      frame.addEventListener('click', race);
+      setTimeout(race, 2800);
+      setInterval(race, 6000);
+    })();
+
+    // ---- [13] MOTION PATH — HTML element follows SVG geometry ----
+    (function () {
+      var ship = $('#ajShip'), path = $('#ajMotionPath');
+      if (!ship || !path || !svg || !svg.createMotionPath) { if (ship) ship.style.display = 'none'; return; }
+      try {
+        var mp = svg.createMotionPath(path);
+        animate(ship, {
+          translateX: mp.translateX, translateY: mp.translateY, rotate: mp.rotate,
+          duration: 5000, ease: 'inOutSine', loop: true, alternate: true
+        });
+      } catch (e) { ship.style.display = 'none'; }
+    })();
+
+    // ---- [14] SHAPE MORPH — polygon breathing into a star ----
+    (function () {
+      var poly = $('#ajMorphPoly'), target = $('#ajMorphTarget');
+      if (!poly || !target || !svg || !svg.morphTo) return;
+      try {
+        animate(poly, {
+          points: svg.morphTo(target),
+          duration: 2200, ease: 'inOutQuad', loop: true, alternate: true
+        });
+      } catch (e) {}
+    })();
+
+    // ---- [15] TIMER — target-less clock on the anime.js engine ----
+    (function () {
+      var read = $('#ajTimerRead'), toggle = $('#ajTimerToggle'), restart = $('#ajTimerRestart');
+      if (!read || !A.createTimer) { if (read) read.textContent = '--:--.--'; return; }
+      function fmt(ms) {
+        var m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60, c = Math.floor(ms / 10) % 100;
+        return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s + '.' + (c < 10 ? '0' : '') + c;
+      }
+      var timer = A.createTimer({
+        onUpdate: function (t) { read.textContent = fmt(t.currentTime || 0); }
+      });
+      var paused = false;
+      if (toggle) toggle.addEventListener('click', function () {
+        paused = !paused;
+        if (paused) { timer.pause(); toggle.textContent = '▶ Resume'; }
+        else { timer.play(); toggle.textContent = '⏸ Pause'; }
+      });
+      if (restart) restart.addEventListener('click', function () {
+        timer.restart(); paused = false; if (toggle) toggle.textContent = '⏸ Pause';
+      });
+    })();
+
+    // ---- [16] TEXT SPLIT — chars scramble in from random offsets ----
+    (function () {
+      var card = $('#ajTextCard'), target = $('#ajTextTarget');
+      if (!card || !target) return;
+      var text = target.textContent;
+      target.textContent = '';
+      text.split('').forEach(function (ch) {
+        if (ch === ' ') { target.appendChild(document.createTextNode(' ')); return; }
+        var s = document.createElement('span');
+        s.className = 'aj-char'; s.textContent = ch;
+        target.appendChild(s);
+      });
+      var chars = $all('.aj-char', target);
+      function playText() {
+        animate(chars, {
+          translateY: [function () { return (Math.random() - .5) * 90; }, 0],
+          translateX: [function () { return (Math.random() - .5) * 50; }, 0],
+          rotate: [function () { return (Math.random() - .5) * 90; }, 0],
+          opacity: [0, 1],
+          duration: 900, ease: 'outExpo', delay: stagger(28, { from: 'random' })
+        });
+      }
+      card.addEventListener('click', playText);
+      setTimeout(playText, 3200);
+    })();
+
+    // ---- [17] ANIMATABLE — orb re-tweened toward the pointer ----
+    (function () {
+      var zone = $('#ajAnimZone'), orb = $('#ajAnimOrb');
+      if (!zone || !orb || !A.createAnimatable) return;
+      try {
+        var able = A.createAnimatable(orb, { x: 450, y: 450, ease: 'out(3)' });
+        zone.addEventListener('pointermove', function (e) {
+          var r = zone.getBoundingClientRect();
+          able.x(e.clientX - r.left - r.width / 2);
+          able.y(e.clientY - r.top - r.height / 2);
+        });
+        zone.addEventListener('pointerleave', function () { able.x(0); able.y(0); });
+      } catch (e) {}
+    })();
+
+    // ---- [18] WAAPI — hardware-accelerated Web Animations ----
+    (function () {
+      var card = $('#ajWaapiCard');
+      if (!card) return;
+      var boxes = $all('.aj-waapi-box', card);
+      var api = (A.waapi && A.waapi.animate) ? A.waapi.animate : animate;
+      function playWaapi() {
+        try {
+          api(boxes, {
+            rotate: '1turn',
+            scale: [1, 1.35, 1],
+            borderRadius: ['14%', '50%', '14%'],
+            duration: 1300, ease: 'inOutQuad', delay: stagger(140)
+          });
+        } catch (e) {}
+      }
+      card.addEventListener('click', playWaapi);
+      setTimeout(playWaapi, 3400);
+    })();
+
+    // ---- [19] onScroll — ScrollObserver-synced comet ----
+    (function () {
+      var comet = $('#ajSyncComet'), frame = $('.aj-sync-frame');
+      if (!comet || !frame || !A.onScroll) return;
+      try {
+        var track = comet.parentNode;
+        animate(comet, {
+          translateX: function () { return Math.max(0, track.clientWidth - 62); },
+          rotate: 360,
+          ease: 'linear',
+          autoplay: A.onScroll({ target: frame, sync: true })
+        });
+      } catch (e) {}
+    })();
+
+    // ---- [20] ENGINE — global playback rate ----
+    (function () {
+      var wrap = $('#ajRateBtns');
+      if (!wrap || !A.engine) { if (wrap) wrap.parentNode.style.display = 'none'; return; }
+      $all('.aj-scrub-btn', wrap).forEach(function (b) {
+        b.addEventListener('click', function () {
+          $all('.aj-scrub-btn', wrap).forEach(function (x) { x.classList.remove('-on'); });
+          b.classList.add('-on');
+          A.engine.playbackRate = parseFloat(b.getAttribute('data-rate')) || 1;
+        });
+      });
+    })();
+
+    // ---- hover micro-interactions (anime.js springs) ----
+    // only on static cards whose transform isn't owned by a StringTune module or anime loop
+    $all('.diag-card, .fcard').forEach(function (card) {
+      card.addEventListener('mouseenter', function () {
+        animate(card, { scale: 1.015, duration: 450, ease: createSpring ? createSpring({ stiffness: 180, damping: 14 }) : 'outQuad' });
+      });
+      card.addEventListener('mouseleave', function () {
+        animate(card, { scale: 1, duration: 450, ease: 'outQuad' });
+      });
+    });
+
+    // section headings pop as they enter the viewport
+    if ('IntersectionObserver' in window) {
+      var seen = new WeakSet();
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting || seen.has(en.target)) return;
+          seen.add(en.target);
+          animate(en.target, { opacity: [0, 1], translateY: [26, 0], duration: 800, ease: 'outCubic' });
+          var no = en.target.querySelector('.sec-no');
+          if (no) animate(no, { scale: [0, 1], rotate: [-90, 0], duration: 700, ease: 'outBack', delay: 150 });
+          io.unobserve(en.target);
+        });
+      }, { threshold: 0.4 });
+      $all('.sec-head').forEach(function (h) { io.observe(h); });
+    }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+</body>
+</html>
